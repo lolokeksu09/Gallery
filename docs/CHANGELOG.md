@@ -4,6 +4,43 @@ Version-to-version history of the Gallery application. Every version bump adds a
 Sizes and hashes come from the CI build that produced that version; where a build was not measured,
 this file says so instead of guessing.
 
+## 0.1.6 — versionCode 7
+
+Not built yet; this entry is completed once CI reports the size and hash.
+
+Added
+- Multi-select in the photo grid. A long press starts it, a tap extends it, back leaves it. The top
+  bar becomes "N выбрано" with share, favorite, hide and delete.
+- Batch actions act once instead of per file: one system dialog covers the whole selection, sharing
+  uses ACTION_SEND_MULTIPLE, and favorites toggle as a group (an already fully favorited selection
+  clears). BatchPlanTest covers the share type and the group toggle.
+- Hiding a selection encrypts and verifies each file separately, then asks once to delete the
+  verified originals. Refusing that dialog removes every copy made for the batch, so a file is never
+  lost from both places. Progress is a bare counter, never a file name.
+
+Changed
+- FLAG_SECURE is held while the vault is open or unlocked. The unlocked vault used to be captured
+  into the recent-apps snapshot, which survives the screen lock, and was screenshotable, recordable
+  and castable. It is not held outside the vault, so ordinary screenshots still work.
+- The wrong-password count is stored, so force-stopping the application no longer resets the growing
+  delay it earned.
+- Deleting from the gallery uses createTrashRequest, so a deletion is recoverable from the system
+  trash for 30 days. Removing the original after a vault import deliberately stays a real delete: a
+  trashed original would still be listed in the system trash.
+- Video tiles come from MediaStore's own thumbnails instead of decoding a frame out of the original
+  file on every scroll. Photos stay with Coil, which remains the fallback.
+- tools/verify.sh resolves every repository.name(...) call against a declared function.
+
+Fixed
+- Favorites are keyed by content URI and nothing removed a key when its file went away, so the count
+  in settings only ever grew. Stale keys are pruned on refresh, except under limited access.
+
+Known limitations, not fixed here
+- Favorites still use the content URI as their key, so they are lost when MediaStore re-indexes and
+  when a file is restored from the vault (restore creates a new row). A stable key needs a migration.
+- Filtering, sorting and date grouping still run in composition on the main thread. Fine at this
+  library size; revisit if it grows or lag appears.
+
 ## 0.1.5 — versionCode 6
 
 Not built yet; this entry is completed once CI reports the size and hash.

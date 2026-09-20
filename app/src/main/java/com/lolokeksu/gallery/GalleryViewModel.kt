@@ -93,6 +93,10 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             prefs[favoritesKey] = if (key in old) old - key else old + key
         }
     }
+
+    fun favorite(keys: Set<String>) = viewModelScope.launch {
+        store.edit { prefs -> prefs[favoritesKey] = BatchPlan.nextFavorites(prefs[favoritesKey] ?: emptySet(), keys) }
+    }
     /**
      * Video tiles only. Coil decodes a frame out of the original file for every video tile and
      * redoes it on every scroll back; MediaStore already holds a generated thumbnail. Photos stay

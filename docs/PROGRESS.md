@@ -1,5 +1,23 @@
 # Progress
 
+## 0.1.6 privacy, trash, thumbnails and multi-select (pending CI)
+- FLAG_SECURE while the vault is open or unlocked; the unlocked vault no longer reaches the recents
+  snapshot. Wrong-password count persisted, so a force stop no longer bypasses the lockout.
+- Gallery deletions go to the system trash; the vault import still really deletes the original,
+  because a trashed original would stay visible in the system trash.
+- Stale favorite keys pruned on refresh, except under limited access.
+- Video tiles read MediaStore thumbnails instead of decoding frames. Coil's disk cache was checked
+  first and rejected: it only serves network sources, so it would have been a no-op here.
+- Multi-select with batch share, favorite, hide and delete. One system dialog per batch.
+- Verified for steps 1-3: build 35523814609 green on aed09f4. Step 4 pending CI.
+- Not verified: nothing in 0.1.6 has run on a device.
+
+## Next
+1. Device test: batch hide with the dialog refused (nothing may be lost), batch delete and restore
+   from the system trash, rotation during an active selection, video scroll speed.
+2. Physical Android 13 smoke tests still outstanding from earlier releases.
+3. Favorites still key on the content URI; a stable key needs a migration.
+
 ## 0.1.5 colour system and silent vault (pending CI)
 - Hiding a file says nothing at all: a success or refusal message naming the file or the vault would
   reveal the vault to anyone watching the screen. Only an unlabelled spinner shows during encryption.

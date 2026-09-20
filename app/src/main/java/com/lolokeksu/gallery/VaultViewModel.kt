@@ -24,8 +24,8 @@ data class VaultState(
     val busy: String? = null,
     val error: String? = null,
     val message: String? = null,
-    /** Set once a copy is encrypted and verified: the screen must now ask Android to delete the original. */
-    val pendingDelete: GalleryMedia? = null,
+    /** Copies encrypted and verified: the screen must now ask Android to delete these originals. */
+    val pendingDelete: List<GalleryMedia> = emptyList(),
     /** Milliseconds the user must wait before the next attempt after repeated failures. */
     val lockedOutFor: Long = 0
 )
@@ -43,7 +43,7 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     private var key: SecretKey? = null
     private val thumbnails = LinkedHashMap<String, ImageBitmap>()
 
-    private var pendingItem: VaultItem? = null
+    private var pendingItems: List<VaultItem> = emptyList()
 
     init {
         viewModelScope.launch {
@@ -101,14 +101,14 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     fun lock() {
         key = null
         thumbnails.clear()
-        pendingItem = null
+        pendingItems = emptyList()
         // Dropping the key is what matters and must happen now; unlinking files is done off the
         // main thread because lock() is driven from the lifecycle observer.
         viewModelScope.launch { withContext(Dispatchers.IO) { repository.clearCache() } }
         mutable.update {
             it.copy(
                 unlocked = false, items = emptyList(), error = null, message = null,
-                busy = null, pendingDelete = null
+                busy = null, pendingDelete = emptyList()
             )
         }
     }
@@ -161,23 +161,44 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
      * watching the screen that a vault exists, which is the one thing it must not do. Only the
      * unlabelled progress spinner shows, because a long encryption would otherwise look frozen.
      */
-    fun hide(media: GalleryMedia) {
+    fun hide(media: List<GalleryMedia>) {
         val current = key ?: return
-        // A second tap would overwrite the pending item and orphan the first encrypted copy.
-        if (mutable.value.busy != null || mutable.value.pendingDelete != null) return
+        if (media.isEmpty()) return
+        // A second start would overwrite the pending list and orphan the copies already made.
+        if (mutable.value.busy != null || mutable.value.pendingDelete.isNotEmpty()) return
         viewModelScope.launch {
-            mutable.update { it.copy(busy = "", error = null, message = null) }
-            try {
-                val item = repository.import(current, media)
-                pendingItem = item
-                mutable.update { it.copy(busy = null, pendingDelete = media) }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                pendingItem = null
+            val imported = mutableListOf<VaultItem>()
+            val originals = mutableListOf<GalleryMedia>()
+            var failed = 0
+            media.forEachIndexed { index, source ->
+                // A bare counter, never a file name: nothing on screen may name the vault.
                 mutable.update {
-                    it.copy(busy = null, pendingDelete = null, error = e.message ?: "Не удалось скрыть файл")
+                    it.copy(
+                        busy = if (media.size > 1) "${index + 1} / ${media.size}" else "",
+                        error = null, message = null
+                    )
                 }
+                try {
+                    imported += repository.import(current, source)
+                    originals += source
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (_: Exception) {
+                    // import() already removed its own partial copy; carry on with the rest.
+                    failed++
+                }
+            }
+            pendingItems = imported
+            mutable.update {
+                it.copy(
+                    busy = null,
+                    pendingDelete = originals,
+                    error = when {
+                        failed == 0 -> null
+                        originals.isEmpty() -> "Не удалось выполнить действие"
+                        else -> "Не удалось обработать $failed из ${media.size}"
+                    }
+                )
             }
         }
     }
@@ -185,10 +206,10 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     /** The system delete succeeded, so the vault copy is now the only one. */
     /** The system delete succeeded. Deliberately silent: see [hide]. */
     fun confirmHidden() {
-        pendingItem = null
+        pendingItems = emptyList()
         viewModelScope.launch {
             reload()
-            mutable.update { it.copy(pendingDelete = null) }
+            mutable.update { it.copy(pendingDelete = emptyList()) }
         }
     }
 
@@ -197,10 +218,16 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
      * user just dismissed that dialog themselves, so they know the file stayed where it was.
      */
     fun cancelHidden() {
-        val item = pendingItem
-        pendingItem = null
-        if (item != null) viewModelScope.launch { withContext(Dispatchers.IO) { repository.forget(item.id) } }
-        mutable.update { it.copy(pendingDelete = null) }
+        // Every copy made for this batch goes, not just the last one, or the rest would be
+        // orphaned while their originals are still in the gallery.
+        val abandoned = pendingItems
+        pendingItems = emptyList()
+        if (abandoned.isNotEmpty()) {
+            viewModelScope.launch {
+                withContext(Dispatchers.IO) { abandoned.forEach { repository.forget(it.id) } }
+            }
+        }
+        mutable.update { it.copy(pendingDelete = emptyList()) }
     }
 
     fun restore(item: VaultItem) {
@@ -270,7 +297,7 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         // viewModelScope is already cancelled here, so the wipe runs directly.
         key = null
         thumbnails.clear()
-        pendingItem = null
+        pendingItems = emptyList()
         repository.clearCache()
         super.onCleared()
     }

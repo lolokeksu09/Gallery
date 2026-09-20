@@ -18,10 +18,12 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.*
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
@@ -115,6 +117,8 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var album by rememberSaveable { mutableStateOf<String?>(null) }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
+    var selectionList by rememberSaveable { mutableStateOf(emptyList<String>()) }
+    val selection = remember(selectionList) { selectionList.toSet() }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.refresh() }
     fun access() {
         request.launch(buildList {
@@ -139,7 +143,10 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
     val deleteRequest = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
         vm.refresh()
         // A cancelled deletion must leave the viewer open on the same file.
-        if (result.resultCode == Activity.RESULT_OK) selected = null
+        if (result.resultCode == Activity.RESULT_OK) {
+            selected = null
+            selectionList = emptyList()
+        }
     }
     // The vault locks itself whenever the application leaves the foreground, which also wipes
     // every decrypted copy from the cache.
@@ -147,17 +154,19 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         if (result.resultCode == Activity.RESULT_OK) {
             vaultVm.confirmHidden()
             selected = null
+            selectionList = emptyList()
         } else {
             vaultVm.cancelHidden()
         }
         vm.refresh()
     }
     LaunchedEffect(vault.pendingDelete) {
-        val pending = vault.pendingDelete ?: return@LaunchedEffect
+        val pending = vault.pendingDelete
+        if (pending.isEmpty()) return@LaunchedEffect
         try {
             // Deliberately a real delete, not the trash: a trashed original stays listed in the
-            // system trash, which would defeat the point of hiding it.
-            val intent = MediaStore.createDeleteRequest(context.contentResolver, listOf(pending.uri))
+            // system trash, which would defeat the point of hiding it. One dialog covers the batch.
+            val intent = MediaStore.createDeleteRequest(context.contentResolver, pending.map { it.uri })
             hideRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
         } catch (_: Exception) {
             vaultVm.cancelHidden()
@@ -213,9 +222,47 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         viewer = held.copy(media = visible)
     }
 
+    val chosen = remember(visible, selection) { visible.filter { it.key in selection } }
+    fun trashChosen() {
+        if (chosen.isEmpty()) return
+        try {
+            val intent = MediaStore.createTrashRequest(context.contentResolver, chosen.map { it.uri }, true)
+            deleteRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
+        } catch (_: Exception) { Toast.makeText(context, "Не удалось запросить удаление", Toast.LENGTH_SHORT).show() }
+    }
+    fun shareChosen() {
+        if (chosen.isEmpty()) return
+        try {
+            val uris = ArrayList(chosen.map { it.uri })
+            val intent = if (uris.size == 1) {
+                Intent(Intent.ACTION_SEND).apply {
+                    type = chosen.first().mime
+                    putExtra(Intent.EXTRA_STREAM, uris.first())
+                }
+            } else {
+                Intent(Intent.ACTION_SEND_MULTIPLE).apply {
+                    type = BatchPlan.shareType(chosen.map { it.mime })
+                    putParcelableArrayListExtra(Intent.EXTRA_STREAM, uris)
+                }
+            }
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            context.startActivity(Intent.createChooser(intent, "Поделиться"))
+        } catch (_: Exception) { Toast.makeText(context, "Не удалось отправить файлы", Toast.LENGTH_SHORT).show() }
+    }
+
     Box(Modifier.fillMaxSize().background(palette.backdropBottom)) {
-        GalleryHome(state, vm, tab, album, visible, onTab = { tab = it; album = null }, onAlbum = { album = it },
-            onOpen = { selected = it }, onAccess = { access() }, onVault = { vaultOpen = true })
+        GalleryHome(state, vm, tab, album, visible, onTab = { tab = it; album = null; selectionList = emptyList() },
+            onAlbum = { album = it; selectionList = emptyList() },
+            onOpen = { selected = it }, onAccess = { access() }, onVault = { vaultOpen = true },
+            selection = selection,
+            onToggle = { media ->
+                selectionList = if (media.key in selection) selectionList - media.key else selectionList + media.key
+            },
+            onClearSelection = { selectionList = emptyList() },
+            onSelectionShare = { shareChosen() },
+            onSelectionTrash = { trashChosen() },
+            onSelectionFavorite = { vm.favorite(selection); selectionList = emptyList() },
+            onSelectionHide = if (vault.unlocked) ({ vaultVm.hide(chosen) }) else null)
         AnimatedVisibility(
             visible = openKey != null,
             enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
@@ -232,7 +279,7 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
                                 deleteRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
                             } catch (_: Exception) { Toast.makeText(context, "Не удалось запросить удаление", Toast.LENGTH_SHORT).show() }
                         },
-                        onHide = if (vault.unlocked) ({ media -> vaultVm.hide(media) }) else null)
+                        onHide = if (vault.unlocked) ({ media -> vaultVm.hide(listOf(media)) }) else null)
                 }
             }
         }
@@ -260,7 +307,7 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         }
     }
     val notice = vault.error ?: vault.message
-    if (notice != null && vault.busy == null && vault.pendingDelete == null) {
+    if (notice != null && vault.busy == null && vault.pendingDelete.isEmpty()) {
         AlertDialog(
             onDismissRequest = vaultVm::clearNotice,
             text = { Text(notice) },
@@ -279,7 +326,10 @@ private data class ViewerRequest(
 private fun GalleryHome(
     state: GalleryState, vm: GalleryViewModel, tab: Int, album: String?, visible: List<GalleryMedia>,
     onTab: (Int) -> Unit, onAlbum: (String?) -> Unit, onOpen: (String) -> Unit, onAccess: () -> Unit,
-    onVault: () -> Unit
+    onVault: () -> Unit,
+    selection: Set<String>, onToggle: (GalleryMedia) -> Unit, onClearSelection: () -> Unit,
+    onSelectionShare: () -> Unit, onSelectionTrash: () -> Unit, onSelectionFavorite: () -> Unit,
+    onSelectionHide: (() -> Unit)?
 ) {
     val palette = LocalGalleryPalette.current
     var sortMenu by remember { mutableStateOf(false) }
@@ -288,25 +338,60 @@ private fun GalleryHome(
     // in a row is the only way in.
     var taps by remember { mutableIntStateOf(0) }
     var lastTap by remember { mutableLongStateOf(0L) }
-    BackHandler(album != null) { onAlbum(null) }
+    val selecting = selection.isNotEmpty()
+    // While files are selected, back leaves the selection rather than the album.
+    BackHandler(selecting) { onClearSelection() }
+    BackHandler(album != null && !selecting) { onAlbum(null) }
     Scaffold(
         containerColor = palette.backdropBottom,
-        topBar = { TopAppBar(title = { Column {
-            Text(if (album != null) visible.firstOrNull()?.album ?: "Альбом" else listOf("Фотографии", "Альбомы", "Избранное", "Настройки")[tab], fontWeight = FontWeight.SemiBold)
-            if (tab != 3) Text("${visible.size} файлов", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
-        } }, navigationIcon = {
-            if (album != null) IconButton(onClick = { onAlbum(null) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
-        }, actions = {
-            if (tab != 3) {
-                IconButton(onClick = vm::refresh) { Icon(Icons.Default.Refresh, "Обновить") }
-                Box {
-                    IconButton(onClick = { sortMenu = true }) { Icon(sortIcon(), "Сортировка") }
-                    DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
-                        SortOrder.entries.forEach { order -> DropdownMenuItem(text = { Text(order.label) }, onClick = { vm.sort(order); sortMenu = false }) }
-                    }
+        topBar = {
+            AnimatedContent(
+                targetState = selecting,
+                transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(140)) using null },
+                label = "topBar"
+            ) { inSelection ->
+                if (inSelection) {
+                    TopAppBar(
+                        title = { Text("${selection.size} выбрано", fontWeight = FontWeight.SemiBold) },
+                        navigationIcon = {
+                            IconButton(onClick = onClearSelection) { Icon(Icons.Default.Close, "Снять выбор") }
+                        },
+                        actions = {
+                            IconButton(onClick = onSelectionShare) { Icon(Icons.Default.Share, "Поделиться") }
+                            IconButton(onClick = onSelectionFavorite) { Icon(Icons.Default.Favorite, "Избранное") }
+                            // Present only while the vault is unlocked, so the feature stays hidden.
+                            onSelectionHide?.let { hide ->
+                                IconButton(onClick = hide) { Icon(Icons.Default.Lock, "Скрыть") }
+                            }
+                            IconButton(onClick = onSelectionTrash) { Icon(Icons.Default.Delete, "Удалить") }
+                        },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = palette.chrome,
+                            titleContentColor = palette.accent,
+                            actionIconContentColor = palette.accent,
+                            navigationIconContentColor = palette.accent
+                        )
+                    )
+                } else {
+                    TopAppBar(title = { Column {
+                        Text(if (album != null) visible.firstOrNull()?.album ?: "Альбом" else listOf("Фотографии", "Альбомы", "Избранное", "Настройки")[tab], fontWeight = FontWeight.SemiBold)
+                        if (tab != 3) Text("${visible.size} файлов", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+                    } }, navigationIcon = {
+                        if (album != null) IconButton(onClick = { onAlbum(null) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
+                    }, actions = {
+                        if (tab != 3) {
+                            IconButton(onClick = vm::refresh) { Icon(Icons.Default.Refresh, "Обновить") }
+                            Box {
+                                IconButton(onClick = { sortMenu = true }) { Icon(sortIcon(), "Сортировка") }
+                                DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
+                                    SortOrder.entries.forEach { order -> DropdownMenuItem(text = { Text(order.label) }, onClick = { vm.sort(order); sortMenu = false }) }
+                                }
+                            }
+                        }
+                    }, colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.chrome))
                 }
             }
-        }, colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.chrome)) },
+        },
         bottomBar = { NavigationBar(containerColor = palette.chrome) {
             val labels = listOf("Фото", "Альбомы", "Избранное", "Настройки")
             labels.forEachIndexed { index, label ->
@@ -364,7 +449,10 @@ private fun GalleryHome(
                             if (currentTab == 2) "Нажми сердечко при просмотре фотографии." else "Доступные фотографии появятся здесь.",
                             "Обновить", vm::refresh)
                         else if (currentTab == 1 && currentAlbum == null) AlbumGrid(items, vm, onAlbum)
-                        else PhotoGrid(items, state, vm, onColumns = vm::columns, onOpen = { onOpen(it.key) })
+                        else PhotoGrid(
+                            items, state, vm, selection, onToggle,
+                            onColumns = vm::columns, onOpen = { onOpen(it.key) }
+                        )
                     }
                 }
             }
@@ -426,8 +514,13 @@ private suspend fun PointerInputScope.detectGridPinch(onStep: (Int) -> Unit) {
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, vm: GalleryViewModel, onColumns: (Int) -> Unit, onOpen: (GalleryMedia) -> Unit) {
+private fun PhotoGrid(
+    media: List<GalleryMedia>, state: GalleryState, vm: GalleryViewModel,
+    selection: Set<String>, onToggle: (GalleryMedia) -> Unit,
+    onColumns: (Int) -> Unit, onOpen: (GalleryMedia) -> Unit
+) {
     val palette = LocalGalleryPalette.current
     val groups = remember(media, state.sort) {
         if (state.sort == SortOrder.NAME) linkedMapOf("По названию" to media)
@@ -463,9 +556,16 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, vm: Galler
                     }
                 }
                 items(items, key = { it.key }) { media ->
-                    Thumbnail(media, media.key in state.favorites,
-                        Modifier.animateItem().aspectRatio(1f).clip(RoundedCornerShape(corner)).clickable { onOpen(media) },
-                        vm)
+                    Thumbnail(
+                        media, media.key in state.favorites,
+                        Modifier.animateItem().aspectRatio(1f).clip(RoundedCornerShape(corner))
+                            .combinedClickable(
+                                // Outside selection a tap opens; inside it toggles. A long press
+                                // always starts or extends the selection.
+                                onClick = { if (selection.isEmpty()) onOpen(media) else onToggle(media) },
+                                onLongClick = { onToggle(media) }
+                            ),
+                        vm, selected = media.key in selection)
                 }
             }
         }
@@ -478,7 +578,10 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, vm: Galler
 }
 
 @Composable
-private fun Thumbnail(media: GalleryMedia, favorite: Boolean, modifier: Modifier, vm: GalleryViewModel? = null) {
+private fun Thumbnail(
+    media: GalleryMedia, favorite: Boolean, modifier: Modifier,
+    vm: GalleryViewModel? = null, selected: Boolean = false
+) {
     val palette = LocalGalleryPalette.current
     // Videos come from MediaStore's own thumbnail cache; decoding a frame out of the original file
     // on every scroll is what made video tiles slow. Photos stay with Coil, which downsamples them
@@ -486,12 +589,28 @@ private fun Thumbnail(media: GalleryMedia, favorite: Boolean, modifier: Modifier
     val preview by produceState<ImageBitmap?>(null, media.key, vm) {
         value = if (media.video && vm != null) vm.videoThumbnail(media) else null
     }
+    val chosen by animateFloatAsState(if (selected) 1f else 0f, tween(180), label = "selected")
     Box(modifier.background(palette.card)) {
+        val shrink = Modifier.fillMaxSize().graphicsLayer {
+            val factor = 1f - 0.12f * chosen
+            scaleX = factor
+            scaleY = factor
+        }
         preview?.let { bitmap ->
-            Image(bitmap, media.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
-        } ?: AsyncImage(model = media.uri, contentDescription = media.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+            Image(bitmap, media.name, shrink, contentScale = ContentScale.Crop)
+        } ?: AsyncImage(model = media.uri, contentDescription = media.name, contentScale = ContentScale.Crop, modifier = shrink)
         if (media.video) Text(formatDuration(media.duration), modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = .65f)).padding(horizontal = 5.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = Color.White)
         if (favorite) Icon(Icons.Default.Favorite, "Избранное", Modifier.align(Alignment.TopEnd).padding(6.dp).size(16.dp), tint = Color.White)
+        if (chosen > 0f) {
+            Box(Modifier.fillMaxSize().background(palette.accent.copy(alpha = .28f * chosen)))
+            Box(
+                Modifier.align(Alignment.TopStart).padding(6.dp).size(20.dp).clip(CircleShape)
+                    .background(palette.accent.copy(alpha = chosen)),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(Icons.Default.Check, null, Modifier.size(14.dp), tint = palette.onAccent)
+            }
+        }
     }
 }
 
