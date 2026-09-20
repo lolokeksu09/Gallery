@@ -7,5 +7,6 @@ DataStore stores small settings and favorite URI sets; no Room/Hilt/navigation f
 Toolchain: JDK17, Gradle8.11.1, AGP8.9.2, Kotlin2.1.20, SDK35/min33, pinned dependencies. GitHub Actions installs SDK and Gradle, runs tests/lint/assembleDebug, then audits actual APK permissions and uploads an artifact. No permanent release signing key exists yet; CI debug signing does not guarantee update compatibility between runs. Plan persistent private signing before stable distribution.
 
 Android references:
+- CI 0.1.1: Gradle task cache enabled alongside setup-gradle dependency caching, capped at two workers; reuse preinstalled SDK when present; cancel superseded builds; ignore documentation-only pushes. Keep R8/resource shrinking and tests/lint/permission audit.
 - https://developer.android.com/about/versions/14/changes/partial-photo-video-access
 - https://developer.android.com/build/releases/agp-8-9-0-release-notes

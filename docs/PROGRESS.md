@@ -1,5 +1,11 @@
 # Progress
 
+## 0.1.1 changes (awaiting CI)
+- Compact adaptive album cards; removed technical settings text and offline header suffix.
+- Photo and video library enabled together by default. Both permissions requested together on user action; old video-off preference no longer hides video.
+- Optimized CI: Gradle task cache, two workers, SDK reuse, cancellation of superseded builds, documentation-only push filtering. R8 and all checks remain enabled.
+- User supplied screenshots confirm 0.1.0 launches and renders albums/settings on their device. Other runtime checks remain unverified.
+
 ## Implemented and build-verified
 - Separate Android source project; no RiftCore files.
 - AMOLED UI, photo grid/day groups, albums, favorites, sorting, density settings.

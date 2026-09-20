@@ -30,6 +30,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -66,11 +67,25 @@ fun GalleryApp(vm: GalleryViewModel = viewModel()) {
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
     var sortMenu by remember { mutableStateOf(false) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.refresh() }
-    fun access(video: Boolean) {
+    fun access() {
         request.launch(buildList {
-            add(if (video) Manifest.permission.READ_MEDIA_VIDEO else Manifest.permission.READ_MEDIA_IMAGES)
+            add(Manifest.permission.READ_MEDIA_IMAGES)
+            add(Manifest.permission.READ_MEDIA_VIDEO)
             if (Build.VERSION.SDK_INT >= 34) add(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
         }.toTypedArray())
+    }
+    LaunchedEffect(Unit) {
+        // Records only whether onboarding was shown, never the actual permission state.
+        val onboarding = context.getSharedPreferences("onboarding", android.content.Context.MODE_PRIVATE)
+        if (!onboarding.getBoolean("combined_media_prompt_v1", false)) {
+            onboarding.edit().putBoolean("combined_media_prompt_v1", true).apply()
+            val granted = android.content.pm.PackageManager.PERMISSION_GRANTED
+            val fullAccess = context.checkSelfPermission(Manifest.permission.READ_MEDIA_IMAGES) == granted &&
+                context.checkSelfPermission(Manifest.permission.READ_MEDIA_VIDEO) == granted
+            val partialAccess = Build.VERSION.SDK_INT >= 34 &&
+                context.checkSelfPermission(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) == granted
+            if (!fullAccess && !partialAccess) access()
+        }
     }
     val deleteRequest = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { vm.refresh(); selected = null }
     DisposableEffect(lifecycle) {
@@ -101,7 +116,7 @@ fun GalleryApp(vm: GalleryViewModel = viewModel()) {
         containerColor = Color.Black,
         topBar = { TopAppBar(title = { Column {
             Text(if (album != null) visible.firstOrNull()?.album ?: "Альбом" else listOf("Фотографии", "Альбомы", "Избранное", "Настройки")[tab], fontWeight = FontWeight.SemiBold)
-            if (tab != 3) Text("${visible.size} файлов · только на устройстве", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
+            if (tab != 3) Text("${visible.size} файлов", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         } }, navigationIcon = {
             if (album != null) IconButton(onClick = { album = null }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
         }, actions = {
@@ -123,21 +138,21 @@ fun GalleryApp(vm: GalleryViewModel = viewModel()) {
     ) { padding ->
         Column(Modifier.fillMaxSize().padding(padding)) {
             when {
-                tab == 3 -> SettingsPage(state, vm, onPhotos = { access(false) }, onVideos = { vm.videos(true); access(true) })
+                tab == 3 -> SettingsPage(state, vm, onAccess = { access() })
                 state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                 state.error != null -> EmptyPage("Не удалось загрузить", state.error!!, "Повторить", vm::refresh)
-                !state.canRead -> EmptyPage("Твои фотографии. Только здесь.", "Разреши чтение фотографий. Видео подключаются отдельно. Приложение не имеет доступа к интернету.", "Открыть фотографии", { access(false) })
+                !state.canRead -> EmptyPage("Фото и видео", "Разреши доступ, чтобы увидеть фотографии и видео на телефоне.", "Разрешить доступ", { access() })
                 else -> {
-                    if (state.partial) TextButton(onClick = { access(false) }) { Text("Ограниченный доступ · выбрать ещё фотографии") }
+                    if (state.partial) TextButton(onClick = { access() }) { Text("Выбрать ещё фото и видео") }
                     if (visible.isEmpty()) EmptyPage(if (tab == 2) "Пока нет избранного" else "Здесь пока пусто", if (tab == 2) "Нажми сердечко при просмотре фотографии." else "Доступные фотографии появятся здесь.", "Обновить", vm::refresh)
                     else if (tab == 1 && album == null) {
                         val albums = remember(visible) { visible.groupBy { it.albumKey }.values.toList() }
-                        LazyVerticalGrid(columns = GridCells.Fixed(2), contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                        LazyVerticalGrid(columns = GridCells.Adaptive(100.dp), contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             items(albums, key = { it.first().albumKey }) { items ->
                                 Column(Modifier.clickable { album = items.first().albumKey }) {
-                                    Thumbnail(items.first(), false, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(18.dp)))
-                                    Text(items.first().album, maxLines = 1, modifier = Modifier.padding(top = 8.dp))
-                                    Text("${items.size} файлов", style = MaterialTheme.typography.labelMedium, color = Color.Gray)
+                                    Thumbnail(items.first(), false, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)))
+                                    Text(items.first().album, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+                                    Text("${items.size} файлов", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
                                 }
                             }
                         }
@@ -182,23 +197,13 @@ private fun EmptyPage(title: String, subtitle: String, action: String, onAction:
 }
 
 @Composable
-private fun SettingsPage(state: GalleryState, vm: GalleryViewModel, onPhotos: () -> Unit, onVideos: () -> Unit) {
+private fun SettingsPage(state: GalleryState, vm: GalleryViewModel, onAccess: () -> Unit) {
     val context = LocalContext.current
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        Text("Личная. Офлайн. AMOLED.", style = MaterialTheme.typography.headlineSmall)
-        Text("Нет аккаунтов, аналитики и сетевых разрешений. Избранное и настройки хранятся только в приложении.", color = Color.Gray)
-        HorizontalDivider()
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Column(Modifier.weight(1f)) { Text("Показывать видео"); Text("Отдельное разрешение", style = MaterialTheme.typography.bodySmall, color = Color.Gray) }
-            Switch(checked = state.videos, onCheckedChange = { if (it) onVideos() else vm.videos(false) })
-        }
-        if (state.videos) TextButton(onClick = onVideos) { Text("Настроить доступ к видео") }
         Text("Столбцов в сетке: ${state.columns}")
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) { (2..5).forEach { count -> FilterChip(selected = state.columns == count, onClick = { vm.columns(count) }, label = { Text("$count") }) } }
         HorizontalDivider()
-        TextButton(onClick = onPhotos) { Text("Доступ к фотографиям") }
+        TextButton(onClick = onAccess) { Text("Доступ к фото и видео") }
         TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }) { Text("Системные разрешения") }
-        Text("Отключение видео скрывает их в Gallery. Чтобы отозвать разрешение, открой системные настройки.", style = MaterialTheme.typography.bodySmall, color = Color.Gray)
-        Text("Gallery 0.1.0 · Android 13+", style = MaterialTheme.typography.labelMedium)
     }
 }

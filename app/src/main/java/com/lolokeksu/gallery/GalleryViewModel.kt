@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.*
 private val Context.galleryStore by preferencesDataStore("gallery")
 data class GalleryState(
     val media: List<GalleryMedia> = emptyList(), val favorites: Set<String> = emptySet(),
-    val videos: Boolean = false, val columns: Int = 3, val sort: SortOrder = SortOrder.NEWEST,
+    val columns: Int = 3, val sort: SortOrder = SortOrder.NEWEST,
     val loading: Boolean = true, val error: String? = null, val canRead: Boolean = false,
     val partial: Boolean = false
 )
@@ -25,7 +25,6 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = MediaRepository(app)
     private val store = app.galleryStore
     private val favoritesKey = stringSetPreferencesKey("favorites")
-    private val videosKey = booleanPreferencesKey("videos")
     private val columnsKey = intPreferencesKey("columns")
     private val sortKey = stringPreferencesKey("sort")
     private val mutable = MutableStateFlow(GalleryState())
@@ -43,9 +42,8 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         app.contentResolver.registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, observer)
         viewModelScope.launch {
             store.data.catch { emit(emptyPreferences()) }.collect { prefs ->
-                val videos = prefs[videosKey] ?: false
-                val reload = videos != mutable.value.videos || mutable.value.loading
-                mutable.update { it.copy(favorites = prefs[favoritesKey] ?: emptySet(), videos = videos,
+                val reload = mutable.value.loading
+                mutable.update { it.copy(favorites = prefs[favoritesKey] ?: emptySet(),
                     columns = (prefs[columnsKey] ?: 3).coerceIn(2, 5),
                     sort = SortOrder.entries.find { s -> s.name == prefs[sortKey] } ?: SortOrder.NEWEST) }
                 if (reload) refresh()
@@ -55,10 +53,10 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     fun refresh() {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
-            val readable = repository.photos() || (mutable.value.videos && repository.videos())
+            val readable = repository.photos() || repository.videos()
             mutable.update { it.copy(loading = true, error = null, canRead = readable, partial = repository.partial(), media = emptyList()) }
             try {
-                val media = repository.read(mutable.value.videos)
+                val media = repository.read(includeVideos = true)
                 mutable.update { it.copy(media = media, loading = false) }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
@@ -72,7 +70,6 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             prefs[favoritesKey] = if (key in old) old - key else old + key
         }
     }
-    fun videos(enabled: Boolean) = viewModelScope.launch { store.edit { it[videosKey] = enabled } }
     fun columns(count: Int) = viewModelScope.launch { store.edit { it[columnsKey] = count.coerceIn(2, 5) } }
     fun sort(order: SortOrder) = viewModelScope.launch { store.edit { it[sortKey] = order.name } }
     override fun onCleared() { getApplication<Application>().contentResolver.unregisterContentObserver(observer) }
