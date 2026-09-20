@@ -32,6 +32,18 @@
   - The filtered and sorted list was memoised three times with the same keys; it is built once and passed
     down, and favorites no longer invalidate it outside the favorites tab.
 - versionCode 4 / versionName 0.1.3.
+- Build verified: https://github.com/lolokeksu09/Gallery/actions/runs/35518294962 (commit 393baf5).
+  Unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+- Measured effect of the build work, so it is not overstated:
+  - APK 10,258,777 bytes against 10,281,374 for 0.1.1: 22,597 bytes, 0.22%. R8 was already removing the
+    unused material-icons-extended classes, so dropping the dependency, the ru/en resource limit and the
+    metadata exclusions changed almost nothing in the package. The reduction does absorb the code added
+    for this release, but it is not a size win worth claiming.
+  - Build step 3m39s and 3m22s against 3m33s for 0.1.2: no measurable change. gradle/actions/setup-gradle
+    runs the cache read-only on non-default branches ("Cache is read-only: will not save state"), so the
+    Gradle configuration cache and build cache cannot pay off here. Any gain would first appear on main.
+  - The changes are kept because they are correct and cost nothing, not because they were shown to help.
+  - CI now prints APK size and SHA256, so the next comparison needs no artifact download.
 
 ## 0.1.2 photo, video and settings update (build-verified in CI)
 - Photo grid: gaps between tiles (5-10dp, scaled with column count), rounded corners, date headers with a file count. Tiles no longer touch each other.
