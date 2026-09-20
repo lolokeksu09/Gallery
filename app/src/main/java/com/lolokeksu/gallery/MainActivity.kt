@@ -21,6 +21,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
+import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
@@ -362,8 +363,8 @@ private fun GalleryHome(
                             if (currentTab == 2) "Пока нет избранного" else "Здесь пока пусто",
                             if (currentTab == 2) "Нажми сердечко при просмотре фотографии." else "Доступные фотографии появятся здесь.",
                             "Обновить", vm::refresh)
-                        else if (currentTab == 1 && currentAlbum == null) AlbumGrid(items, onAlbum)
-                        else PhotoGrid(items, state, onColumns = vm::columns, onOpen = { onOpen(it.key) })
+                        else if (currentTab == 1 && currentAlbum == null) AlbumGrid(items, vm, onAlbum)
+                        else PhotoGrid(items, state, vm, onColumns = vm::columns, onOpen = { onOpen(it.key) })
                     }
                 }
             }
@@ -372,7 +373,7 @@ private fun GalleryHome(
 }
 
 @Composable
-private fun AlbumGrid(media: List<GalleryMedia>, onAlbum: (String?) -> Unit) {
+private fun AlbumGrid(media: List<GalleryMedia>, vm: GalleryViewModel, onAlbum: (String?) -> Unit) {
     val palette = LocalGalleryPalette.current
     val albums = remember(media) { media.groupBy { it.albumKey }.values.toList() }
     LazyVerticalGrid(
@@ -384,7 +385,7 @@ private fun AlbumGrid(media: List<GalleryMedia>, onAlbum: (String?) -> Unit) {
     ) {
         items(albums, key = { it.first().albumKey }) { items ->
             Column(Modifier.animateItem().clickable { onAlbum(items.first().albumKey) }) {
-                Thumbnail(items.first(), false, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)))
+                Thumbnail(items.first(), false, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)), vm)
                 Text(items.first().album, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
                 Text("${items.size} файлов", style = MaterialTheme.typography.labelSmall, color = palette.muted)
             }
@@ -426,7 +427,7 @@ private suspend fun PointerInputScope.detectGridPinch(onStep: (Int) -> Unit) {
 }
 
 @Composable
-private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns: (Int) -> Unit, onOpen: (GalleryMedia) -> Unit) {
+private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, vm: GalleryViewModel, onColumns: (Int) -> Unit, onOpen: (GalleryMedia) -> Unit) {
     val palette = LocalGalleryPalette.current
     val groups = remember(media, state.sort) {
         if (state.sort == SortOrder.NAME) linkedMapOf("По названию" to media)
@@ -463,7 +464,8 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns:
                 }
                 items(items, key = { it.key }) { media ->
                     Thumbnail(media, media.key in state.favorites,
-                        Modifier.animateItem().aspectRatio(1f).clip(RoundedCornerShape(corner)).clickable { onOpen(media) })
+                        Modifier.animateItem().aspectRatio(1f).clip(RoundedCornerShape(corner)).clickable { onOpen(media) },
+                        vm)
                 }
             }
         }
@@ -476,10 +478,18 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns:
 }
 
 @Composable
-private fun Thumbnail(media: GalleryMedia, favorite: Boolean, modifier: Modifier) {
+private fun Thumbnail(media: GalleryMedia, favorite: Boolean, modifier: Modifier, vm: GalleryViewModel? = null) {
     val palette = LocalGalleryPalette.current
+    // Videos come from MediaStore's own thumbnail cache; decoding a frame out of the original file
+    // on every scroll is what made video tiles slow. Photos stay with Coil, which downsamples them
+    // cheaply, and Coil remains the fallback when MediaStore has no thumbnail to give.
+    val preview by produceState<ImageBitmap?>(null, media.key, vm) {
+        value = if (media.video && vm != null) vm.videoThumbnail(media) else null
+    }
     Box(modifier.background(palette.card)) {
-        AsyncImage(model = media.uri, contentDescription = media.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
+        preview?.let { bitmap ->
+            Image(bitmap, media.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        } ?: AsyncImage(model = media.uri, contentDescription = media.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         if (media.video) Text(formatDuration(media.duration), modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = .65f)).padding(horizontal = 5.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = Color.White)
         if (favorite) Icon(Icons.Default.Favorite, "Избранное", Modifier.align(Alignment.TopEnd).padding(6.dp).size(16.dp), tint = Color.White)
     }

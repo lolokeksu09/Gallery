@@ -8,6 +8,8 @@ import android.os.Looper
 import android.provider.MediaStore
 import androidx.datastore.preferences.core.*
 import androidx.datastore.preferences.preferencesDataStore
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.*
@@ -31,6 +33,7 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     private val mutable = MutableStateFlow(GalleryState())
     val state = mutable.asStateFlow()
     private var loadJob: Job? = null
+    private val videoThumbnails = LinkedHashMap<String, ImageBitmap>()
     private var observerJob: Job? = null
     private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
@@ -90,11 +93,28 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             prefs[favoritesKey] = if (key in old) old - key else old + key
         }
     }
+    /**
+     * Video tiles only. Coil decodes a frame out of the original file for every video tile and
+     * redoes it on every scroll back; MediaStore already holds a generated thumbnail. Photos stay
+     * with Coil, which downsamples them cheaply. Null means the caller should fall back to Coil.
+     */
+    suspend fun videoThumbnail(media: GalleryMedia): ImageBitmap? {
+        videoThumbnails[media.key]?.let { return it }
+        val bitmap = repository.thumbnail(media.uri, THUMBNAIL_PIXELS)?.asImageBitmap() ?: return null
+        if (videoThumbnails.size >= THUMBNAIL_CACHE) videoThumbnails.remove(videoThumbnails.keys.first())
+        videoThumbnails[media.key] = bitmap
+        return bitmap
+    }
+
     fun columns(count: Int) = viewModelScope.launch { store.edit { it[columnsKey] = count.coerceIn(2, 5) } }
     fun sort(order: SortOrder) = viewModelScope.launch { store.edit { it[sortKey] = order.name } }
     fun theme(id: String) = viewModelScope.launch { store.edit { it[themeKey] = id } }
     override fun onCleared() {
+        videoThumbnails.clear()
         getApplication<Application>().contentResolver.unregisterContentObserver(observer)
         super.onCleared()
     }
 }
+
+private const val THUMBNAIL_PIXELS = 384
+private const val THUMBNAIL_CACHE = 48

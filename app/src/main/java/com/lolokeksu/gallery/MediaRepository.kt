@@ -6,7 +6,9 @@ import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.graphics.Bitmap
 import android.provider.MediaStore
+import android.util.Size
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -38,6 +40,19 @@ class MediaRepository(private val context: Context) {
         allowed(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) && !(fullPhotos() && fullVideos())
     fun photos() = fullPhotos() || partial()
     fun videos() = fullVideos() || partial()
+
+    /**
+     * MediaStore keeps its own generated thumbnails. Reading one costs a fraction of decoding a
+     * video frame out of the original file, which is what Coil's VideoFrameDecoder does on every
+     * load. Returns null when MediaStore has nothing to offer, so the caller can fall back.
+     */
+    suspend fun thumbnail(uri: android.net.Uri, pixels: Int): Bitmap? = withContext(Dispatchers.IO) {
+        try {
+            context.contentResolver.loadThumbnail(uri, Size(pixels, pixels), null)
+        } catch (_: Exception) {
+            null
+        }
+    }
 
     suspend fun read(): List<GalleryMedia> = withContext(Dispatchers.IO) {
         val result = mutableListOf<GalleryMedia>()
