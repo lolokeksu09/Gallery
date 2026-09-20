@@ -9,6 +9,7 @@
 - Duration unit tests.
 
 ## Next
+CI first attempt failed before compilation: setup-android requested obsolete SDK package `tools`. Fixed by explicitly requesting only platform-tools. Zoom now yields unzoomed horizontal drags to the pager.
 1. Run GitHub build, fix compilation/lint/test failures.
 2. Download successful APK artifact and deliver.
 3. Physical Android13 smoke tests: denied/granted permission; photos only; optional video; empty library; large library; zoom/swipe; rotate; sharing; delete confirm/cancel; permission revocation; airplane mode.

@@ -7,7 +7,8 @@ import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.foundation.gestures.rememberTransformableState
+import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -23,8 +24,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -83,22 +86,21 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<St
 private fun ZoomableImage(media: GalleryMedia, onZoom: (Boolean) -> Unit) {
     var scale by remember(media.key) { mutableFloatStateOf(1f) }
     var offset by remember(media.key) { mutableStateOf(Offset.Zero) }
+    var bounds by remember { mutableStateOf(IntSize.Zero) }
+    val transform = rememberTransformableState { zoom, pan, _ ->
+        val next = (scale * zoom).coerceIn(1f, 5f)
+        scale = next
+        offset = if (next <= 1f) Offset.Zero else Offset(
+            (offset.x + pan.x).coerceIn(-bounds.width * (next - 1) / 2f, bounds.width * (next - 1) / 2f),
+            (offset.y + pan.y).coerceIn(-bounds.height * (next - 1) / 2f, bounds.height * (next - 1) / 2f))
+        onZoom(next > 1f)
+    }
     Box(Modifier.fillMaxSize().background(Color.Black)
+        .onSizeChanged { bounds = it }
         .pointerInput(media.key) { detectTapGestures(onDoubleTap = {
             scale = if (scale > 1f) 1f else 2.5f; offset = Offset.Zero; onZoom(scale > 1f)
         }) }
-        .pointerInput(media.key, scale > 1f) {
-            // At base scale a one-finger swipe belongs to the pager; transform detector
-            // waits for gesture slop, while zoom is available using two fingers.
-            detectTransformGestures { _, pan, zoom, _ ->
-                val next = (scale * zoom).coerceIn(1f, 5f)
-                scale = next
-                offset = if (next <= 1f) Offset.Zero else Offset(
-                    (offset.x + pan.x).coerceIn(-size.width * (next - 1) / 2f, size.width * (next - 1) / 2f),
-                    (offset.y + pan.y).coerceIn(-size.height * (next - 1) / 2f, size.height * (next - 1) / 2f))
-                onZoom(next > 1f)
-            }
-        }, contentAlignment = Alignment.Center) {
+        .transformable(state = transform, canPan = { scale > 1f }), contentAlignment = Alignment.Center) {
         AsyncImage(model = media.uri, contentDescription = media.name, contentScale = ContentScale.Fit,
             modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y })
     }
