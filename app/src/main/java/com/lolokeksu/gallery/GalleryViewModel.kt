@@ -62,12 +62,28 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val media = repository.read()
                 mutable.update { it.copy(media = media, loading = false) }
+                prune(media, partial = repository.partial())
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 mutable.update { it.copy(loading = false, error = "Не удалось прочитать файлы. Проверь доступ и повтори.") }
             }
         }
     }
+    /**
+     * Favorites are keyed by content URI, and nothing used to remove a key when its file went
+     * away, so the count in settings only ever grew. Skipped under limited access, where the
+     * library is the user's selection and pruning would drop favorites for unselected files.
+     */
+    private suspend fun prune(media: List<GalleryMedia>, partial: Boolean) {
+        if (partial) return
+        val present = media.mapTo(HashSet()) { it.key }
+        store.edit { prefs ->
+            val stored = prefs[favoritesKey] ?: return@edit
+            val kept = stored.filterTo(HashSet()) { it in present }
+            if (kept.size != stored.size) prefs[favoritesKey] = kept
+        }
+    }
+
     fun favorite(key: String) = viewModelScope.launch {
         store.edit { prefs ->
             val old = prefs[favoritesKey] ?: emptySet()

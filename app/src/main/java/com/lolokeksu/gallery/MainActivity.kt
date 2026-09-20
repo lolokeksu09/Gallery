@@ -154,6 +154,8 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
     LaunchedEffect(vault.pendingDelete) {
         val pending = vault.pendingDelete ?: return@LaunchedEffect
         try {
+            // Deliberately a real delete, not the trash: a trashed original stays listed in the
+            // system trash, which would defeat the point of hiding it.
             val intent = MediaStore.createDeleteRequest(context.contentResolver, listOf(pending.uri))
             hideRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
         } catch (_: Exception) {
@@ -223,7 +225,9 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
                     MediaViewer(request.media, request.key, state.favorites, onClose = { selected = null }, onFavorite = vm::favorite,
                         onDelete = { media ->
                             try {
-                                val intent = MediaStore.createDeleteRequest(context.contentResolver, listOf(media.uri))
+                                // The system trash keeps the file recoverable for 30 days, unlike
+                                // createDeleteRequest which erases it outright.
+                                val intent = MediaStore.createTrashRequest(context.contentResolver, listOf(media.uri), true)
                                 deleteRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
                             } catch (_: Exception) { Toast.makeText(context, "Не удалось запросить удаление", Toast.LENGTH_SHORT).show() }
                         },
