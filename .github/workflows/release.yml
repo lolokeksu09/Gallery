@@ -1,0 +1,78 @@
+# Publishes a downloadable APK for a tag. Kept separate from build-apk.yml so the
+# release path has its own permissions and is not affected by that workflow's
+# path filters. Build steps are intentionally identical to build-apk.yml.
+name: Release APK
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing tag to build and publish
+        required: true
+permissions:
+  contents: write
+concurrency:
+  group: release-${{ inputs.tag || github.ref_name }}
+  cancel-in-progress: false
+env:
+  TAG: ${{ inputs.tag || github.ref_name }}
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+      - name: Static checks
+        run: ./tools/verify.sh
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.11.1'
+      - name: Install SDK
+        run: |
+          if [ ! -f "$ANDROID_HOME/platforms/android-35/android.jar" ] || [ ! -x "$ANDROID_HOME/build-tools/35.0.0/aapt" ]; then
+            sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          fi
+      - name: Test, lint and build
+        run: gradle testDebugUnitTest lintDebug assembleDebug --no-daemon
+      - name: Verify APK permissions
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump permissions app/build/outputs/apk/debug/app-debug.apk > permissions.txt
+          cat permissions.txt
+          if grep -Eq "android.permission.(INTERNET|ACCESS_NETWORK_STATE|MANAGE_EXTERNAL_STORAGE|ACCESS_FINE_LOCATION|CAMERA|RECORD_AUDIO)" permissions.txt; then exit 1; fi
+      - name: Name the package
+        id: package
+        run: |
+          APK="Gallery-${TAG}.apk"
+          cp app/build/outputs/apk/debug/app-debug.apk "$APK"
+          echo "apk=$APK" >> "$GITHUB_OUTPUT"
+          echo "bytes=$(stat -c%s "$APK")" >> "$GITHUB_OUTPUT"
+          echo "sha=$(sha256sum "$APK" | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          APK: ${{ steps.package.outputs.apk }}
+        run: |
+          VERSION="${TAG#v}"
+          {
+            echo "Debug test build, not a stable release."
+            echo
+            echo "- APK: ${{ steps.package.outputs.bytes }} bytes"
+            echo "- SHA256: \`${{ steps.package.outputs.sha }}\`"
+            echo
+            awk -v ver="$VERSION" '/^## / { inblock = ($2 == ver) } inblock { print }' docs/CHANGELOG.md
+          } > notes.md
+          cat notes.md
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" permissions.txt --clobber
+            gh release edit "$TAG" --notes-file notes.md
+          else
+            gh release create "$TAG" "$APK" permissions.txt \
+              --title "Gallery $TAG" --prerelease --notes-file notes.md
+          fi
