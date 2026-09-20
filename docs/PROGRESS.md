@@ -9,6 +9,7 @@
 - Duration unit tests.
 
 ## Next
+Second CI attempt reached Kotlin compilation and found a missing enableEdgeToEdge import; fixed. Media3 PlayerView use explicitly opts in to its unstable UI API.
 CI first attempt failed before compilation: setup-android requested obsolete SDK package `tools`. Fixed by explicitly requesting only platform-tools. Zoom now yields unzoomed horizontal drags to the pager.
 1. Run GitHub build, fix compilation/lint/test failures.
 2. Download successful APK artifact and deliver.

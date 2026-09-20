@@ -107,6 +107,7 @@ private fun ZoomableImage(media: GalleryMedia, onZoom: (Boolean) -> Unit) {
 }
 
 @Composable
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 private fun VideoPlayer(media: GalleryMedia) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
