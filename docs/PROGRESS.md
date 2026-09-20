@@ -1,12 +1,14 @@
 # Progress
 
-## 0.1.2 photo, video and settings update (not build-verified yet)
+## 0.1.2 photo, video and settings update (build-verified in CI)
 - Photo grid: gaps between tiles (5-10dp, scaled with column count), rounded corners, date headers with a file count. Tiles no longer touch each other.
 - Pinch with two fingers on the photo grid changes the column count 2-5; the gesture is read on the initial pointer pass and consumed only while two fingers scale, so single-finger scrolling is untouched. A short "N в ряд" badge confirms the change. The value is the existing density setting, so grid and settings stay in sync.
 - Viewer: Scaffold replaced with an overlay layout. Video starts playing immediately and, after the Media3 controller times out (5s), application bars and system bars hide together, so video fills the screen with no application borders. Tap or back restores the chrome; system bars are restored when the viewer closes.
 - Settings tab redesigned: library overview card (photos/videos/favorites), grid density picker with miniature layout previews, sorting choices, access status pill and access action rows. No version label or marketing text, per 0.1.1 feedback.
 - versionCode 3 / versionName 0.1.2. Added explicit androidx.core:core-ktx for WindowInsetsControllerCompat.
 - CI now also builds pushes on claude/** branches; dl.google.com is blocked in the development sandbox, so the Android SDK cannot be installed there and compilation must be verified by GitHub Actions.
+- Build verified: commit 62ebd2c6dfc4ce90db1c1eceee32809c2f4526ac, https://github.com/lolokeksu09/Gallery/actions/runs/35516392490 - unit tests, Android Lint, assembleDebug and the APK permission audit all passed; APK artifact uploaded (not downloaded here, so no size/SHA256 recorded for this run).
+- Not verified: nothing was run on a device or emulator. Grid gaps, the pinch gesture, full-screen video timing and the new settings layout are unconfirmed visually and need user testing on the phone.
 - User statement (not verified here): their phone runs an Android patch that skips signature verification, so a changing debug certificate does not block updates. Persistent release signing is therefore no longer treated as a blocker for delivering test builds to this user.
 
 ## 0.1.1 verified build
