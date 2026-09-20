@@ -4,6 +4,11 @@ One app module. Compose UI -> GalleryViewModel -> MediaRepository -> MediaStore.
 
 DataStore stores small settings and favorite URI sets; no Room/Hilt/navigation framework is needed for this initial small app. This deliberately simplifies the initial proposal. A content observer refreshes metadata, debounced; no background service. Metadata is currently loaded as a list; bitmap previews are lazy and downsampled. Paging is a follow-up if very large libraries prove slow.
 
+Build tuning: Gradle configuration cache, build cache, parallel execution capped at two workers and
+in-process Kotlin compilation. The application avoids material-icons-extended; the few non-core icons
+are vector drawables in res/drawable. Unused build features, packaging metadata and APK dependency
+metadata are switched off, and resources are limited to ru/en.
+
 Toolchain: JDK17, Gradle8.11.1, AGP8.9.2, Kotlin2.1.20, SDK35/min33, pinned dependencies. GitHub Actions installs SDK and Gradle, runs tests/lint/assembleDebug, then audits actual APK permissions and uploads an artifact. No permanent release signing key exists yet; CI debug signing does not guarantee update compatibility between runs. Plan persistent private signing before stable distribution.
 
 Android references:

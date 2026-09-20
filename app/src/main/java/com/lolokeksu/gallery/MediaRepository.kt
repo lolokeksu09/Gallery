@@ -18,18 +18,31 @@ data class GalleryMedia(
 
 enum class SortOrder(val label: String) { NEWEST("Сначала новые"), OLDEST("Сначала старые"), NAME("По названию") }
 
-fun formatDuration(ms: Long): String = "%d:%02d".format(ms / 60000, ms / 1000 % 60)
+fun formatDuration(ms: Long): String {
+    val seconds = (ms / 1000).coerceAtLeast(0)
+    val hours = seconds / 3600
+    return if (hours > 0) "%d:%02d:%02d".format(hours, seconds % 3600 / 60, seconds % 60)
+    else "%d:%02d".format(seconds / 60, seconds % 60)
+}
 
 class MediaRepository(private val context: Context) {
     fun allowed(permission: String) = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
-    fun partial() = Build.VERSION.SDK_INT >= 34 && allowed(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED)
-    fun photos() = allowed(Manifest.permission.READ_MEDIA_IMAGES) || partial()
-    fun videos() = allowed(Manifest.permission.READ_MEDIA_VIDEO) || partial()
+    private fun fullPhotos() = allowed(Manifest.permission.READ_MEDIA_IMAGES)
+    private fun fullVideos() = allowed(Manifest.permission.READ_MEDIA_VIDEO)
 
-    suspend fun read(includeVideos: Boolean): List<GalleryMedia> = withContext(Dispatchers.IO) {
+    /**
+     * Android 14 also grants READ_MEDIA_VISUAL_USER_SELECTED when the user allows full access,
+     * so limited access is only reported when full access is actually missing.
+     */
+    fun partial() = Build.VERSION.SDK_INT >= 34 &&
+        allowed(Manifest.permission.READ_MEDIA_VISUAL_USER_SELECTED) && !(fullPhotos() && fullVideos())
+    fun photos() = fullPhotos() || partial()
+    fun videos() = fullVideos() || partial()
+
+    suspend fun read(): List<GalleryMedia> = withContext(Dispatchers.IO) {
         val result = mutableListOf<GalleryMedia>()
         if (photos()) result += query(false)
-        if (includeVideos && videos()) result += query(true)
+        if (videos()) result += query(true)
         result.sortedByDescending { it.date }
     }
 

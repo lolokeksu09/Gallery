@@ -54,9 +54,11 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         loadJob?.cancel()
         loadJob = viewModelScope.launch {
             val readable = repository.photos() || repository.videos()
-            mutable.update { it.copy(loading = true, error = null, canRead = readable, partial = repository.partial(), media = emptyList()) }
+            // Previously loaded media stays on screen while reloading, so returning to the
+            // application or a MediaStore change no longer blanks the grid.
+            mutable.update { it.copy(loading = it.media.isEmpty(), error = null, canRead = readable, partial = repository.partial()) }
             try {
-                val media = repository.read(includeVideos = true)
+                val media = repository.read()
                 mutable.update { it.copy(media = media, loading = false) }
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
@@ -72,5 +74,8 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun columns(count: Int) = viewModelScope.launch { store.edit { it[columnsKey] = count.coerceIn(2, 5) } }
     fun sort(order: SortOrder) = viewModelScope.launch { store.edit { it[sortKey] = order.name } }
-    override fun onCleared() { getApplication<Application>().contentResolver.unregisterContentObserver(observer) }
+    override fun onCleared() {
+        getApplication<Application>().contentResolver.unregisterContentObserver(observer)
+        super.onCleared()
+    }
 }
