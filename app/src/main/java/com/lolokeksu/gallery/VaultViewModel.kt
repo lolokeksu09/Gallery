@@ -47,7 +47,12 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     private var pendingItem: VaultItem? = null
 
     init {
-        viewModelScope.launch { mutable.update { it.copy(configured = repository.configured()) } }
+        viewModelScope.launch {
+            // A crash can leave decrypted copies behind; the guarantee is that they never
+            // outlive the application, so startup clears them too.
+            withContext(Dispatchers.IO) { repository.clearCache() }
+            mutable.update { it.copy(configured = repository.configured()) }
+        }
     }
 
     fun create(password: String, repeat: String) {
@@ -103,8 +108,10 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     fun lock() {
         key = null
         thumbnails.clear()
-        repository.clearCache()
         pendingItem = null
+        // Dropping the key is what matters and must happen now; unlinking files is done off the
+        // main thread because lock() is driven from the lifecycle observer.
+        viewModelScope.launch { withContext(Dispatchers.IO) { repository.clearCache() } }
         mutable.update {
             it.copy(
                 unlocked = false, items = emptyList(), error = null, message = null,
@@ -115,7 +122,17 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun reload() {
         val current = key ?: return
-        mutable.update { it.copy(items = repository.list(current)) }
+        val listing = repository.list(current)
+        mutable.update {
+            it.copy(
+                items = listing.items,
+                error = if (listing.unreadable > 0) {
+                    "${listing.unreadable} записей в хранилище не читаются. Файлы на месте, но метаданные повреждены."
+                } else {
+                    it.error
+                }
+            )
+        }
     }
 
     suspend fun thumbnail(id: String): ImageBitmap? {
@@ -147,6 +164,8 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     /** Encrypts and verifies the copy. The original is only deleted after [confirmHidden]. */
     fun hide(media: GalleryMedia) {
         val current = key ?: return
+        // A second tap would overwrite the pending item and orphan the first encrypted copy.
+        if (mutable.value.busy != null || mutable.value.pendingDelete != null) return
         viewModelScope.launch {
             mutable.update { it.copy(busy = "Шифрую ${media.name}", error = null, message = null) }
             try {
@@ -181,7 +200,7 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         val item = pendingItem
         val media = mutable.value.pendingDelete
         pendingItem = null
-        if (item != null) repository.forget(item.id)
+        if (item != null) viewModelScope.launch { withContext(Dispatchers.IO) { repository.forget(item.id) } }
         mutable.update {
             it.copy(
                 pendingDelete = null,
@@ -209,7 +228,7 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
 
     fun delete(item: VaultItem) {
         viewModelScope.launch {
-            repository.forget(item.id)
+            withContext(Dispatchers.IO) { repository.forget(item.id) }
             thumbnails.remove(item.id)
             reload()
             mutable.update { it.copy(message = "${item.name} удалён без возможности возврата") }
@@ -227,10 +246,16 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             mutable.update { it.copy(busy = "Меняю пароль", error = null) }
-            val changed = repository.changePassword(old.toCharArray(), new.toCharArray())
-            mutable.update {
-                if (changed) it.copy(busy = null, message = "Пароль изменён")
-                else it.copy(busy = null, error = "Старый пароль неверен")
+            try {
+                val changed = repository.changePassword(old.toCharArray(), new.toCharArray())
+                mutable.update {
+                    if (changed) it.copy(busy = null, message = "Пароль изменён")
+                    else it.copy(busy = null, error = "Старый пароль неверен")
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                mutable.update { it.copy(busy = null, error = e.message ?: "Не удалось сменить пароль") }
             }
         }
     }
@@ -238,7 +263,11 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     fun clearNotice() = mutable.update { it.copy(error = null, message = null) }
 
     override fun onCleared() {
-        lock()
+        // viewModelScope is already cancelled here, so the wipe runs directly.
+        key = null
+        thumbnails.clear()
+        pendingItem = null
+        repository.clearCache()
         super.onCleared()
     }
 

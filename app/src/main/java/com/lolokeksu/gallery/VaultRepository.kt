@@ -45,6 +45,9 @@ class VaultRepository(private val context: Context) {
     private val dir = File(context.filesDir, "vault")
     private val cache = File(context.cacheDir, "vault-open")
 
+    /** Ids this process decrypted completely. A cache file from an earlier run is never reused. */
+    private val materialized = mutableSetOf<String>()
+
     private fun media(id: String) = File(dir, "$id.bin")
     private fun meta(id: String) = File(dir, "$id.meta")
     private fun thumb(id: String) = File(dir, "$id.thumb")
@@ -85,16 +88,21 @@ class VaultRepository(private val context: Context) {
         true
     }
 
-    suspend fun list(key: SecretKey): List<VaultItem> = withContext(Dispatchers.IO) {
-        (dir.listFiles { file -> file.name.endsWith(".meta") } ?: emptyArray())
+    class VaultListing(val items: List<VaultItem>, val unreadable: Int)
+
+    suspend fun list(key: SecretKey): VaultListing = withContext(Dispatchers.IO) {
+        var unreadable = 0
+        val items = (dir.listFiles { file -> file.name.endsWith(".meta") } ?: emptyArray())
             .mapNotNull { file ->
                 try {
                     decodeMeta(file.name.removeSuffix(".meta"), VaultCrypto.open(key, file.readBytes()))
                 } catch (_: Exception) {
+                    unreadable++
                     null
                 }
             }
             .sortedByDescending { it.date }
+        VaultListing(items, unreadable)
     }
 
     suspend fun thumbnail(key: SecretKey, id: String): ByteArray? = withContext(Dispatchers.IO) {
@@ -120,8 +128,19 @@ class VaultRepository(private val context: Context) {
                 target.outputStream().use { output -> VaultCrypto.encryptStream(key, input, output) }
             } ?: throw VaultException("Не удалось прочитать ${source.name}")
 
+            // A source that ends early hashes consistently with the short copy it produced, so the
+            // digest alone proves nothing. MediaStore's size is the only independent witness.
+            if (source.size > 0 && written.bytes != source.size) {
+                throw VaultException(
+                    "Прочитано ${written.bytes} из ${source.size} байт ${source.name}, оригинал не тронут"
+                )
+            }
+            if (written.bytes == 0L) {
+                throw VaultException("Файл ${source.name} пуст или недоступен, оригинал не тронут")
+            }
+
             val stored = target.inputStream().use { VaultCrypto.decryptStream(key, it, null) }
-            if (!stored.contentEquals(written)) {
+            if (stored.bytes != written.bytes || !stored.sha256.contentEquals(written.sha256)) {
                 throw VaultException("Проверка копии ${source.name} не сошлась, оригинал не тронут")
             }
 
@@ -177,25 +196,33 @@ class VaultRepository(private val context: Context) {
     suspend fun materialize(key: SecretKey, item: VaultItem): File = withContext(Dispatchers.IO) {
         cache.mkdirs()
         val target = File(cache, item.id)
-        if (!target.exists() || target.length() == 0L) {
-            try {
-                target.outputStream().use { output ->
-                    media(item.id).inputStream().use { VaultCrypto.decryptStream(key, it, output) }
-                }
-            } catch (e: Exception) {
-                target.delete()
-                throw VaultException("Не удалось открыть ${item.name}: ${e.message}")
+        if (synchronized(materialized) { item.id in materialized } && target.exists()) return@withContext target
+        // Decrypt through a part file so a kill mid-write can never leave a truncated file
+        // that later looks complete.
+        val part = File(cache, "${item.id}.part")
+        try {
+            part.outputStream().use { output ->
+                media(item.id).inputStream().use { VaultCrypto.decryptStream(key, it, output) }
             }
+            target.delete()
+            if (!part.renameTo(target)) throw VaultException("Не удалось подготовить ${item.name}")
+        } catch (e: Exception) {
+            part.delete()
+            target.delete()
+            throw if (e is VaultException) e else VaultException("Не удалось открыть ${item.name}: ${e.message}")
         }
+        synchronized(materialized) { materialized += item.id }
         target
     }
 
     fun forget(id: String) {
-        listOf(media(id), meta(id), thumb(id), File(cache, id)).forEach { it.delete() }
+        synchronized(materialized) { materialized -= id }
+        listOf(media(id), meta(id), thumb(id), File(cache, id), File(cache, "$id.part")).forEach { it.delete() }
     }
 
-    /** Removes every decrypted copy. Called whenever the vault locks. */
+    /** Removes every decrypted copy. Called when the vault locks and once at startup. */
     fun clearCache() {
+        synchronized(materialized) { materialized.clear() }
         cache.listFiles()?.forEach { it.delete() }
     }
 

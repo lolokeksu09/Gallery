@@ -172,7 +172,12 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         val observer = LifecycleEventObserver { _, event ->
             when (event) {
                 Lifecycle.Event.ON_RESUME -> vm.refresh()
-                Lifecycle.Event.ON_STOP -> { vaultVm.lock(); vaultOpen = false }
+                // A rotation also stops the activity; locking there would drop the key and
+                // throw the user back to the password gate mid-view.
+                Lifecycle.Event.ON_STOP -> if (context.activity()?.isChangingConfigurations != true) {
+                    vaultVm.lock()
+                    vaultOpen = false
+                }
                 else -> Unit
             }
         }
@@ -226,6 +231,25 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         ) {
             VaultScreen(vaultVm) { vaultOpen = false }
         }
+        // Hiding a file starts from the gallery viewer with the vault closed, so its progress and
+        // its failures have to be shown here rather than inside the vault screen.
+        vault.busy?.let { busy ->
+            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .72f)), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Spacer(Modifier.height(16.dp))
+                    Text(busy, color = Color.White)
+                }
+            }
+        }
+    }
+    val notice = vault.error ?: vault.message
+    if (notice != null && vault.busy == null && vault.pendingDelete == null) {
+        AlertDialog(
+            onDismissRequest = vaultVm::clearNotice,
+            text = { Text(notice) },
+            confirmButton = { TextButton(onClick = vaultVm::clearNotice) { Text("Понятно") } }
+        )
     }
 }
 

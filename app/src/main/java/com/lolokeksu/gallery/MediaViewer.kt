@@ -64,7 +64,7 @@ private const val ZOOM_ANIMATION_MS = 260
 private const val MAX_ZOOM = 5f
 private const val DOUBLE_TAP_ZOOM = 2.5f
 
-private fun Context.activity(): Activity? {
+internal fun Context.activity(): Activity? {
     var current: Context? = this
     while (current is ContextWrapper) {
         if (current is Activity) return current

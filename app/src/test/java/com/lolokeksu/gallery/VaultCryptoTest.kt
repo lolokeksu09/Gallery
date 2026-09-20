@@ -27,7 +27,8 @@ class VaultCryptoTest {
 
     private fun encrypt(key: SecretKey, data: ByteArray): ByteArray {
         val out = ByteArrayOutputStream()
-        VaultCrypto.encryptStream(key, ByteArrayInputStream(data), out)
+        val result = VaultCrypto.encryptStream(key, ByteArrayInputStream(data), out)
+        assertEquals("encrypt reported the wrong byte count", data.size.toLong(), result.bytes)
         return out.toByteArray()
     }
 
@@ -44,9 +45,10 @@ class VaultCryptoTest {
             val data = bytes(size)
             val sealed = encrypt(key, data)
             val out = ByteArrayOutputStream()
-            val digest = VaultCrypto.decryptStream(key, ByteArrayInputStream(sealed), out)
+            val result = VaultCrypto.decryptStream(key, ByteArrayInputStream(sealed), out)
             assertArrayEquals("plaintext differs at $size bytes", data, out.toByteArray())
-            assertArrayEquals("digest differs at $size bytes", sha(data), digest)
+            assertArrayEquals("digest differs at $size bytes", sha(data), result.sha256)
+            assertEquals("byte count differs at $size bytes", size.toLong(), result.bytes)
         }
     }
 
@@ -55,8 +57,11 @@ class VaultCryptoTest {
         val data = bytes(300_000)
         val out = ByteArrayOutputStream()
         val written = VaultCrypto.encryptStream(key, ByteArrayInputStream(data), out)
-        assertArrayEquals(sha(data), written)
-        assertArrayEquals(written, VaultCrypto.decryptStream(key, ByteArrayInputStream(out.toByteArray()), null))
+        assertArrayEquals(sha(data), written.sha256)
+        assertEquals(data.size.toLong(), written.bytes)
+        val verified = VaultCrypto.decryptStream(key, ByteArrayInputStream(out.toByteArray()), null)
+        assertArrayEquals(written.sha256, verified.sha256)
+        assertEquals(written.bytes, verified.bytes)
     }
 
     @Test fun storedBytesAreNotThePlaintext() {
@@ -120,6 +125,33 @@ class VaultCryptoTest {
             fail("a wrong password unwrapped the data key")
         } catch (_: Exception) {
         }
+    }
+
+    /**
+     * A source that stops early produces a consistent digest for the short copy it wrote, which is
+     * why import compares the reported byte count against the size MediaStore knows.
+     */
+    @Test fun aShortSourceIsVisibleInTheReportedByteCount() {
+        val key = VaultCrypto.newDataKey()
+        val full = bytes(200_000)
+        val truncating = object : java.io.InputStream() {
+            private val inner = ByteArrayInputStream(full)
+            private var served = 0
+            override fun read(): Int = if (served++ >= 50_000) -1 else inner.read()
+            override fun read(b: ByteArray, off: Int, len: Int): Int {
+                if (served >= 50_000) return -1
+                val allowed = minOf(len, 50_000 - served)
+                val read = inner.read(b, off, allowed)
+                if (read > 0) served += read
+                return read
+            }
+        }
+        val out = ByteArrayOutputStream()
+        val result = VaultCrypto.encryptStream(key, truncating, out)
+        assertEquals(50_000L, result.bytes)
+        assertNotEquals(full.size.toLong(), result.bytes)
+        // The copy is internally consistent, so only the count exposes the problem.
+        assertArrayEquals(result.sha256, VaultCrypto.decryptStream(key, ByteArrayInputStream(out.toByteArray()), null).sha256)
     }
 
     @Test fun differentSaltsGiveDifferentKeys() {

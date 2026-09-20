@@ -82,28 +82,9 @@ fun VaultScreen(vm: VaultViewModel, onClose: () -> Unit) {
                 onSettings = { settings = true }
             )
         }
-        state.busy?.let { busy ->
-            Box(
-                Modifier.fillMaxSize().background(Color.Black.copy(alpha = .72f)),
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    Spacer(Modifier.height(16.dp))
-                    Text(busy, color = Color.White)
-                }
-            }
-        }
     }
-
-    val notice = state.error ?: state.message
-    if (notice != null && state.busy == null) {
-        AlertDialog(
-            onDismissRequest = vm::clearNotice,
-            text = { Text(notice) },
-            confirmButton = { TextButton(onClick = vm::clearNotice) { Text("Понятно") } }
-        )
-    }
+    // Progress and notices are drawn by the caller, so they are also visible while hiding a
+    // file from the gallery with this screen closed.
 
     confirmDelete?.let { item ->
         AlertDialog(

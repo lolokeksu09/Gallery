@@ -1,5 +1,40 @@
 # Progress
 
+## 0.1.4 private vault (built green, audited, not device-tested)
+- Vault reachable only by five taps on the already open Settings tab; the "move to vault" action shows in
+  the viewer only while the vault is unlocked. No other entry point exists.
+- AES-GCM under a random data key wrapped by a PBKDF2 key from the password. Media is stored as
+  independent 1 MiB frames binding their index as associated data, with a terminator frame, so
+  reordering, splicing and truncation fail to decrypt and memory stays bounded.
+- Import encrypts, then verifies by decrypting the copy and comparing SHA-256 AND the byte count against
+  the size MediaStore reports, then asks for the platform delete confirmation. A refused confirmation
+  discards the vault copy.
+- Verified: build 35520968624 green on 0e18847 (compilation, VaultCryptoTest, lint, permission audit).
+  The frame format was additionally exercised against a Java mirror locally, 31 checks.
+- Audit findings fixed on top of that build:
+  - Import verification was self-referential: a source ending early hashed consistently with the short
+    copy, so verification passed and the original was then deleted. The byte count is now compared with
+    the size MediaStore reports, and an empty read is refused.
+  - ON_STOP also fires on rotation, so turning the phone locked the vault and dropped the user back to
+    the password gate. Locking now skips configuration changes.
+  - Progress and failures during hiding were drawn inside the vault screen, which is closed during that
+    flow, so encryption progress was invisible and errors were swallowed. Both moved to the caller.
+  - A second tap on "move to vault" started a second import and orphaned the first encrypted copy.
+  - materialize() reused any non-empty cache file, so a kill mid-decrypt served a truncated file forever,
+    and decrypted copies survived the process. Decryption now goes through a part file, only files this
+    process completed are reused, and startup clears the cache.
+  - changePassword had no try/catch and would crash the application on a storage failure.
+  - Cache and vault-file deletion ran on the main thread from the lifecycle observer.
+  - Unreadable vault metadata was dropped silently, hiding files permanently; the count is now reported.
+- Not verified: nothing ran on a device or emulator. Five taps, password entry, a real move with the
+  system delete dialog, encrypted video playback and restore to the gallery need the phone.
+
+## Next
+1. Device test of the vault, then of the 0.1.3 motion and grid work that is also still unverified.
+2. Physical Android 13 smoke tests: denied/granted permission, photos only, optional video, empty/large
+   library, zoom/swipe, rotate, sharing, deletion confirm/cancel, permission revocation, airplane mode.
+3. Add metadata paging if large-library measurements justify it.
+
 ## 0.1.3 motion, tinted grid, build optimization and bug fixes (pending CI)
 - Photo and album grids sit on a faint green-tinted backdrop instead of pure black, so the gaps between
   photos read as colour. Bars, cards and thumbnails stay near black for AMOLED.

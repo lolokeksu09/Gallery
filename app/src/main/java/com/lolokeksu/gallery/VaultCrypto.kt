@@ -38,6 +38,13 @@ object VaultCrypto {
 
     class VaultDataException(message: String) : Exception(message)
 
+    /**
+     * What a stream actually carried. The byte count matters as much as the digest: a source
+     * that ends early hashes consistently with what was written, so only the count can show
+     * that the copy is short.
+     */
+    class StreamResult(val sha256: ByteArray, val bytes: Long)
+
     fun randomBytes(count: Int): ByteArray = ByteArray(count).also { SecureRandom().nextBytes(it) }
 
     fun deriveKey(password: CharArray, salt: ByteArray): SecretKey {
@@ -73,29 +80,32 @@ object VaultCrypto {
      * Encrypts [input] into [output] and returns the SHA-256 of the plaintext that was read,
      * so the caller can prove the copy is sound before the original is touched.
      */
-    fun encryptStream(key: SecretKey, input: InputStream, output: OutputStream): ByteArray {
+    fun encryptStream(key: SecretKey, input: InputStream, output: OutputStream): StreamResult {
         val digest = MessageDigest.getInstance("SHA-256")
         val plain = ByteArray(FRAME_BYTES)
         var index = 0
+        var total = 0L
         while (true) {
             val read = fill(input, plain)
             if (read == 0) break
             digest.update(plain, 0, read)
+            total += read
             writeFrame(output, sealFrame(key, index, plain, read))
             index++
             if (read < plain.size) break
         }
         writeInt(output, TERMINATOR)
-        return digest.digest()
+        return StreamResult(digest.digest(), total)
     }
 
     /**
      * Decrypts into [output], or verifies without writing when [output] is null, and returns the
      * SHA-256 of the plaintext.
      */
-    fun decryptStream(key: SecretKey, input: InputStream, output: OutputStream?): ByteArray {
+    fun decryptStream(key: SecretKey, input: InputStream, output: OutputStream?): StreamResult {
         val digest = MessageDigest.getInstance("SHA-256")
         var index = 0
+        var total = 0L
         while (true) {
             val length = readInt(input)
             if (length == TERMINATOR) break
@@ -106,10 +116,11 @@ object VaultCrypto {
             if (fill(input, frame) != length) throw VaultDataException("vault file is truncated")
             val plain = openFrame(key, index, frame)
             digest.update(plain)
+            total += plain.size
             output?.write(plain)
             index++
         }
-        return digest.digest()
+        return StreamResult(digest.digest(), total)
     }
 
     private fun sealFrame(key: SecretKey, index: Int, plain: ByteArray, length: Int): ByteArray {
