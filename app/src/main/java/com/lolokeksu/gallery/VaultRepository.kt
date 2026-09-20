@@ -59,6 +59,26 @@ class VaultRepository(private val context: Context) {
     private suspend fun read(key: androidx.datastore.preferences.core.Preferences.Key<ByteArray>) =
         context.vaultStore.data.catch { emit(emptyPreferences()) }.first()[key]
 
+    /**
+     * Wrong-password attempts are stored, not merely counted in memory: force-stopping the
+     * application used to reset the counter and skip the growing delay entirely.
+     */
+    suspend fun failures(): Int =
+        context.vaultStore.data.catch { emit(emptyPreferences()) }.first()[failuresKey] ?: 0
+
+    suspend fun recordFailure(): Int {
+        var next = 0
+        context.vaultStore.edit {
+            next = (it[failuresKey] ?: 0) + 1
+            it[failuresKey] = next
+        }
+        return next
+    }
+
+    suspend fun clearFailures() {
+        context.vaultStore.edit { it[failuresKey] = 0 }
+    }
+
     /** Creates the vault. Returns the data key that encrypts the files. */
     suspend fun create(password: CharArray): SecretKey = withContext(Dispatchers.Default) {
         if (configured()) throw VaultException("Хранилище уже создано")
