@@ -10,10 +10,19 @@ android {
         applicationId = "com.lolokeksu.gallery"
         minSdk = 33
         targetSdk = 35
-        versionCode = 3
-        versionName = "0.1.2"
+        versionCode = 4
+        versionName = "0.1.3"
+        // Russian UI with an English fallback; other bundled translations only grow the APK.
+        @Suppress("DEPRECATION")
+        resourceConfigurations += setOf("ru", "en")
+        vectorDrawables { useSupportLibrary = false }
     }
-    buildFeatures { compose = true }
+    buildFeatures {
+        compose = true
+        buildConfig = false
+        resValues = false
+        shaders = false
+    }
     buildTypes {
         getByName("debug") {
             isMinifyEnabled = true
@@ -21,6 +30,23 @@ android {
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"))
         }
     }
+    packaging {
+        resources {
+            excludes += setOf(
+                "/META-INF/{AL2.0,LGPL2.1}",
+                "/META-INF/*.version",
+                "/META-INF/*.kotlin_module",
+                "DebugProbesKt.bin",
+                "kotlin-tooling-metadata.json"
+            )
+        }
+    }
+    // Dependency metadata is only useful for Play distribution and adds a signing block entry.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+    lint { checkDependencies = false }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -32,7 +58,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.core:core-ktx:1.15.0")
     implementation("androidx.compose.material3:material3")
-    implementation("androidx.compose.material:material-icons-extended")
+    implementation("androidx.compose.animation:animation")
     implementation("androidx.compose.ui:ui-tooling-preview")
     debugImplementation("androidx.compose.ui:ui-tooling")
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.9.0")

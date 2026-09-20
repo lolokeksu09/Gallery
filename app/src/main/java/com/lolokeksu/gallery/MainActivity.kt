@@ -1,6 +1,7 @@
 package com.lolokeksu.gallery
 
 import android.Manifest
+import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import android.os.Build
@@ -13,10 +14,11 @@ import androidx.activity.enableEdgeToEdge
 import androidx.activity.compose.*
 import androidx.activity.result.IntentSenderRequest
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
+import androidx.compose.animation.*
+import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.*
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -37,12 +39,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.rememberVectorPainter
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,6 +66,13 @@ import java.time.format.DateTimeFormatter
 const val MIN_COLUMNS = 2
 const val MAX_COLUMNS = 5
 
+/**
+ * Tinted backdrop for the media grids. Surfaces stay near black for AMOLED, but the gaps
+ * between photos carry a faint colour instead of reading as a flat black sheet.
+ */
+private val GridBackground = Brush.verticalGradient(
+    listOf(Color(0xFF17241E), Color(0xFF0D1411), Color(0xFF0A100D))
+)
 private val CardColor = Color(0xFF0C0E0D)
 private val CardBorder = Color(0xFF1D211F)
 private val Muted = Color(0xFF8C948F)
@@ -80,7 +91,23 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@Composable private fun photosIcon(): Painter = painterResource(R.drawable.ic_photos)
+@Composable private fun albumsIcon(): Painter = painterResource(R.drawable.ic_albums)
+@Composable private fun sortIcon(): Painter = painterResource(R.drawable.ic_sort)
+@Composable private fun gridIcon(): Painter = painterResource(R.drawable.ic_grid)
+
+/** Tab, album and sort filtering in one place so every screen derives the same list. */
+private fun mediaFor(state: GalleryState, tab: Int, album: String?): List<GalleryMedia> {
+    val filtered = state.media.filter {
+        (tab != 2 || it.key in state.favorites) && (album == null || it.albumKey == album)
+    }
+    return when (state.sort) {
+        SortOrder.NEWEST -> filtered.sortedByDescending { it.date }
+        SortOrder.OLDEST -> filtered.sortedBy { it.date }
+        SortOrder.NAME -> filtered.sortedBy { it.name.lowercase() }
+    }
+}
+
 @Composable
 fun GalleryApp(vm: GalleryViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -89,7 +116,6 @@ fun GalleryApp(vm: GalleryViewModel = viewModel()) {
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var album by rememberSaveable { mutableStateOf<String?>(null) }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
-    var sortMenu by remember { mutableStateOf(false) }
     val request = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { vm.refresh() }
     fun access() {
         request.launch(buildList {
@@ -111,43 +137,64 @@ fun GalleryApp(vm: GalleryViewModel = viewModel()) {
             if (!fullAccess && !partialAccess) access()
         }
     }
-    val deleteRequest = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { vm.refresh(); selected = null }
+    val deleteRequest = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        vm.refresh()
+        // A cancelled deletion must leave the viewer open on the same file.
+        if (result.resultCode == Activity.RESULT_OK) selected = null
+    }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) vm.refresh() }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    val visible = remember(state.media, state.favorites, state.sort, tab, album) {
-        val filtered = state.media.filter { (tab != 2 || it.key in state.favorites) && (album == null || it.albumKey == album) }
-        when (state.sort) {
-            SortOrder.NEWEST -> filtered.sortedByDescending { it.date }
-            SortOrder.OLDEST -> filtered.sortedBy { it.date }
-            SortOrder.NAME -> filtered.sortedBy { it.name.lowercase() }
+    val visible = remember(state.media, state.favorites, state.sort, tab, album) { mediaFor(state, tab, album) }
+    val openKey = selected?.takeIf { key -> visible.any { it.key == key } }
+    // The list and key are held while the viewer plays its exit animation.
+    var viewer by remember { mutableStateOf<Pair<List<GalleryMedia>, String>?>(null) }
+    if (openKey != null && viewer?.second != openKey) viewer = visible to openKey
+
+    Box(Modifier.fillMaxSize().background(Color.Black)) {
+        GalleryHome(state, vm, tab, album, onTab = { tab = it; album = null }, onAlbum = { album = it },
+            onOpen = { selected = it }, onAccess = { access() })
+        AnimatedVisibility(
+            visible = openKey != null,
+            enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
+            exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.94f, animationSpec = tween(180))
+        ) {
+            viewer?.let { (items, key) ->
+                MediaViewer(items, key, state.favorites, onClose = { selected = null }, onFavorite = vm::favorite,
+                    onDelete = { media ->
+                        try {
+                            val intent = MediaStore.createDeleteRequest(context.contentResolver, listOf(media.uri))
+                            deleteRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
+                        } catch (_: Exception) { Toast.makeText(context, "Не удалось запросить удаление", Toast.LENGTH_SHORT).show() }
+                    })
+            }
         }
     }
-    if (selected != null && visible.any { it.key == selected }) {
-        MediaViewer(visible, selected!!, state.favorites, onClose = { selected = null }, onFavorite = vm::favorite,
-            onDelete = { media ->
-                try {
-                    val intent = MediaStore.createDeleteRequest(context.contentResolver, listOf(media.uri))
-                    deleteRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
-                } catch (_: Exception) { Toast.makeText(context, "Не удалось запросить удаление", Toast.LENGTH_SHORT).show() }
-            })
-        return
-    }
-    BackHandler(album != null) { album = null }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun GalleryHome(
+    state: GalleryState, vm: GalleryViewModel, tab: Int, album: String?,
+    onTab: (Int) -> Unit, onAlbum: (String?) -> Unit, onOpen: (String) -> Unit, onAccess: () -> Unit
+) {
+    var sortMenu by remember { mutableStateOf(false) }
+    val visible = remember(state.media, state.favorites, state.sort, tab, album) { mediaFor(state, tab, album) }
+    BackHandler(album != null) { onAlbum(null) }
     Scaffold(
         containerColor = Color.Black,
         topBar = { TopAppBar(title = { Column {
             Text(if (album != null) visible.firstOrNull()?.album ?: "Альбом" else listOf("Фотографии", "Альбомы", "Избранное", "Настройки")[tab], fontWeight = FontWeight.SemiBold)
             if (tab != 3) Text("${visible.size} файлов", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
         } }, navigationIcon = {
-            if (album != null) IconButton(onClick = { album = null }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
+            if (album != null) IconButton(onClick = { onAlbum(null) }) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Назад") }
         }, actions = {
             if (tab != 3) {
                 IconButton(onClick = vm::refresh) { Icon(Icons.Default.Refresh, "Обновить") }
                 Box {
-                    IconButton(onClick = { sortMenu = true }) { Icon(Icons.Default.Sort, "Сортировка") }
+                    IconButton(onClick = { sortMenu = true }) { Icon(sortIcon(), "Сортировка") }
                     DropdownMenu(expanded = sortMenu, onDismissRequest = { sortMenu = false }) {
                         SortOrder.entries.forEach { order -> DropdownMenuItem(text = { Text(order.label) }, onClick = { vm.sort(order); sortMenu = false }) }
                     }
@@ -156,32 +203,65 @@ fun GalleryApp(vm: GalleryViewModel = viewModel()) {
         }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)) },
         bottomBar = { NavigationBar(containerColor = Color.Black) {
             val labels = listOf("Фото", "Альбомы", "Избранное", "Настройки")
-            val icons = listOf(Icons.Default.PhotoLibrary, Icons.Default.Folder, Icons.Default.Favorite, Icons.Default.Settings)
-            labels.forEachIndexed { index, label -> NavigationBarItem(selected = tab == index, onClick = { tab = index; album = null }, icon = { Icon(icons[index], label) }, label = { Text(label) }) }
+            labels.forEachIndexed { index, label ->
+                NavigationBarItem(selected = tab == index, onClick = { onTab(index) }, label = { Text(label) }, icon = {
+                    when (index) {
+                        0 -> Icon(photosIcon(), label)
+                        1 -> Icon(albumsIcon(), label)
+                        2 -> Icon(Icons.Default.Favorite, label)
+                        else -> Icon(Icons.Default.Settings, label)
+                    }
+                })
+            }
         } }
     ) { padding ->
-        Column(Modifier.fillMaxSize().padding(padding)) {
-            when {
-                tab == 3 -> SettingsPage(state, vm, onAccess = { access() })
-                state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
-                state.error != null -> EmptyPage("Не удалось загрузить", state.error!!, "Повторить", vm::refresh)
-                !state.canRead -> EmptyPage("Фото и видео", "Разреши доступ, чтобы увидеть фотографии и видео на телефоне.", "Разрешить доступ", { access() })
-                else -> {
-                    if (state.partial) TextButton(onClick = { access() }) { Text("Выбрать ещё фото и видео") }
-                    if (visible.isEmpty()) EmptyPage(if (tab == 2) "Пока нет избранного" else "Здесь пока пусто", if (tab == 2) "Нажми сердечко при просмотре фотографии." else "Доступные фотографии появятся здесь.", "Обновить", vm::refresh)
-                    else if (tab == 1 && album == null) {
-                        val albums = remember(visible) { visible.groupBy { it.albumKey }.values.toList() }
-                        LazyVerticalGrid(columns = GridCells.Adaptive(100.dp), contentPadding = PaddingValues(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                            items(albums, key = { it.first().albumKey }) { items ->
-                                Column(Modifier.clickable { album = items.first().albumKey }) {
-                                    Thumbnail(items.first(), false, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)))
-                                    Text(items.first().album, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
-                                    Text("${items.size} файлов", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
-                                }
-                            }
-                        }
-                    } else PhotoGrid(visible, state, onColumns = vm::columns, onOpen = { selected = it.key })
+        AnimatedContent(
+            targetState = tab to album,
+            transitionSpec = {
+                (fadeIn(tween(240, delayMillis = 60)) + scaleIn(initialScale = 0.97f, animationSpec = tween(240, delayMillis = 60)))
+                    .togetherWith(fadeOut(tween(140)) + scaleOut(targetScale = 1.02f, animationSpec = tween(140))) using null
+            },
+            label = "tab"
+        ) { (currentTab, currentAlbum) ->
+            val items = remember(state.media, state.favorites, state.sort, currentTab, currentAlbum) {
+                mediaFor(state, currentTab, currentAlbum)
+            }
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                when {
+                    currentTab == 3 -> SettingsPage(state, vm, onAccess)
+                    state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    state.error != null -> EmptyPage("Не удалось загрузить", state.error!!, "Повторить", vm::refresh)
+                    !state.canRead -> EmptyPage("Фото и видео", "Разреши доступ, чтобы увидеть фотографии и видео на телефоне.", "Разрешить доступ", onAccess)
+                    else -> {
+                        if (state.partial) TextButton(onClick = onAccess) { Text("Выбрать ещё фото и видео") }
+                        if (items.isEmpty()) EmptyPage(
+                            if (currentTab == 2) "Пока нет избранного" else "Здесь пока пусто",
+                            if (currentTab == 2) "Нажми сердечко при просмотре фотографии." else "Доступные фотографии появятся здесь.",
+                            "Обновить", vm::refresh)
+                        else if (currentTab == 1 && currentAlbum == null) AlbumGrid(items, onAlbum)
+                        else PhotoGrid(items, state, onColumns = vm::columns, onOpen = { onOpen(it.key) })
+                    }
                 }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AlbumGrid(media: List<GalleryMedia>, onAlbum: (String?) -> Unit) {
+    val albums = remember(media) { media.groupBy { it.albumKey }.values.toList() }
+    LazyVerticalGrid(
+        columns = GridCells.Adaptive(100.dp),
+        contentPadding = PaddingValues(12.dp),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+        modifier = Modifier.fillMaxSize().background(GridBackground)
+    ) {
+        items(albums, key = { it.first().albumKey }) { items ->
+            Column(Modifier.animateItem().clickable { onAlbum(items.first().albumKey) }) {
+                Thumbnail(items.first(), false, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)))
+                Text(items.first().album, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
+                Text("${items.size} файлов", style = MaterialTheme.typography.labelSmall, color = Muted)
             }
         }
     }
@@ -228,12 +308,13 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns:
     }
     var hint by remember { mutableStateOf(false) }
     LaunchedEffect(state.columns, hint) { if (hint) { delay(900); hint = false } }
-    val gap = animateDpAsState(gridGap(state.columns).dp, label = "gap").value
-    val corner = animateDpAsState((gridGap(state.columns) + 4).dp, label = "corner").value
+    val motion = spring<androidx.compose.ui.unit.Dp>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
+    val gap by animateDpAsState(gridGap(state.columns).dp, motion, label = "gap")
+    val corner by animateDpAsState((gridGap(state.columns) + 4).dp, motion, label = "corner")
     // The gesture detector is started once, so the current values are read through updated state.
     val columns by rememberUpdatedState(state.columns)
     val applyColumns by rememberUpdatedState(onColumns)
-    Box(Modifier.fillMaxSize().pointerInput(Unit) {
+    Box(Modifier.fillMaxSize().background(GridBackground).pointerInput(Unit) {
         detectGridPinch { step ->
             val next = (columns + step).coerceIn(MIN_COLUMNS, MAX_COLUMNS)
             if (next != columns) { applyColumns(next); hint = true }
@@ -247,14 +328,14 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns:
         ) {
             groups.forEach { (date, items) ->
                 item(key = "date:$date", span = { GridItemSpan(maxLineSpan) }) {
-                    Column(Modifier.padding(start = 4.dp, top = 16.dp, bottom = 10.dp)) {
+                    Column(Modifier.animateItem().padding(start = 4.dp, top = 16.dp, bottom = 10.dp)) {
                         Text(date, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
                         Text("${items.size} файлов", style = MaterialTheme.typography.labelSmall, color = Muted)
                     }
                 }
                 items(items, key = { it.key }) { media ->
                     Thumbnail(media, media.key in state.favorites,
-                        Modifier.aspectRatio(1f).clip(RoundedCornerShape(corner)).clickable { onOpen(media) })
+                        Modifier.animateItem().aspectRatio(1f).clip(RoundedCornerShape(corner)).clickable { onOpen(media) })
                 }
             }
         }
@@ -278,9 +359,9 @@ private fun Thumbnail(media: GalleryMedia, favorite: Boolean, modifier: Modifier
 @Composable
 private fun EmptyPage(title: String, subtitle: String, action: String, onAction: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.PhotoLibrary, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
+        Icon(photosIcon(), null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(20.dp)); Text(title, style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(12.dp)); Text(subtitle, color = Color.Gray)
+        Spacer(Modifier.height(12.dp)); Text(subtitle, color = Muted)
         Spacer(Modifier.height(20.dp)); Button(onClick = onAction) { Text(action) }
     }
 }
@@ -293,7 +374,7 @@ private fun SettingsPage(state: GalleryState, vm: GalleryViewModel, onAccess: ()
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         LibraryOverview(photos, videos, state.favorites.size)
-        SettingsCard("Сетка", Icons.Default.GridView) {
+        SettingsCard("Сетка", gridIcon()) {
             Text("Размер плиток. В самой ленте это же меняется щипком двумя пальцами.",
                 style = MaterialTheme.typography.bodySmall, color = Muted)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -302,18 +383,18 @@ private fun SettingsPage(state: GalleryState, vm: GalleryViewModel, onAccess: ()
                 }
             }
         }
-        SettingsCard("Сортировка", Icons.Default.Sort) {
+        SettingsCard("Сортировка", sortIcon()) {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 SortOrder.entries.forEach { order ->
                     ChoiceRow(order.label, state.sort == order) { vm.sort(order) }
                 }
             }
         }
-        SettingsCard("Доступ к медиа", Icons.Default.Lock) {
+        SettingsCard("Доступ к медиа", rememberVectorPainter(Icons.Default.Lock)) {
             AccessStatus(state)
-            ActionRow(Icons.Default.PhotoLibrary, "Доступ к фото и видео",
+            ActionRow(photosIcon(), "Доступ к фото и видео",
                 if (state.partial) "Выбрать больше файлов" else "Запросить у Android", onAccess)
-            ActionRow(Icons.Default.Settings, "Системные разрешения", "Открыть настройки приложения") {
+            ActionRow(rememberVectorPainter(Icons.Default.Settings), "Системные разрешения", "Открыть настройки приложения") {
                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
             }
         }
@@ -329,7 +410,7 @@ private fun LibraryOverview(photos: Int, videos: Int, favorites: Int) {
         verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(Modifier.size(46.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.PhotoLibrary, null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
+                Icon(photosIcon(), null, tint = MaterialTheme.colorScheme.onPrimary, modifier = Modifier.size(24.dp))
             }
             Column {
                 Text("Галерея", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
@@ -347,13 +428,15 @@ private fun LibraryOverview(photos: Int, videos: Int, favorites: Int) {
 @Composable
 private fun Stat(label: String, value: Int, modifier: Modifier) {
     Column(modifier.clip(RoundedCornerShape(16.dp)).background(Color(0x14FFFFFF)).padding(vertical = 12.dp, horizontal = 10.dp)) {
-        Text("$value", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        AnimatedContent(value, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) }, label = "stat") { shown ->
+            Text("$shown", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+        }
         Text(label, style = MaterialTheme.typography.labelSmall, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
-private fun SettingsCard(title: String, icon: ImageVector, content: @Composable ColumnScope.() -> Unit) {
+private fun SettingsCard(title: String, icon: Painter, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(CardColor)
         .border(1.dp, CardBorder, RoundedCornerShape(22.dp)).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
@@ -369,10 +452,13 @@ private fun SettingsCard(title: String, icon: ImageVector, content: @Composable 
 @Composable
 private fun GridOption(count: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
     val accent = MaterialTheme.colorScheme.primary
+    val fill by animateColorAsState(if (selected) accent.copy(alpha = .14f) else Color(0x0FFFFFFF), tween(220), label = "fill")
+    val edge by animateColorAsState(if (selected) accent else Color(0x1AFFFFFF), tween(220), label = "edge")
+    val tile by animateColorAsState(if (selected) accent else Color(0x33FFFFFF), tween(220), label = "tile")
     Column(modifier
         .clip(RoundedCornerShape(16.dp))
-        .background(if (selected) accent.copy(alpha = .14f) else Color(0x0FFFFFFF))
-        .border(1.dp, if (selected) accent else Color(0x1AFFFFFF), RoundedCornerShape(16.dp))
+        .background(fill)
+        .border(1.dp, edge, RoundedCornerShape(16.dp))
         .clickable(onClick = onClick)
         .padding(horizontal = 8.dp, vertical = 10.dp),
         horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -380,31 +466,31 @@ private fun GridOption(count: Int, selected: Boolean, modifier: Modifier, onClic
             repeat(2) {
                 Row(horizontalArrangement = Arrangement.spacedBy(2.dp), modifier = Modifier.fillMaxWidth()) {
                     repeat(count) {
-                        Box(Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(2.dp))
-                            .background(if (selected) accent else Color(0x33FFFFFF)))
+                        Box(Modifier.weight(1f).aspectRatio(1f).clip(RoundedCornerShape(2.dp)).background(tile))
                     }
                 }
             }
         }
-        Text("$count", style = MaterialTheme.typography.labelMedium,
-            color = if (selected) accent else Muted)
+        Text("$count", style = MaterialTheme.typography.labelMedium, color = if (selected) accent else Muted)
     }
 }
 
 @Composable
 private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
     val accent = MaterialTheme.colorScheme.primary
-    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-        .background(if (selected) accent.copy(alpha = .12f) else Color.Transparent)
+    val fill by animateColorAsState(if (selected) accent.copy(alpha = .12f) else Color.Transparent, tween(220), label = "choice")
+    Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).background(fill)
         .clickable(onClick = onClick).padding(horizontal = 14.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
         Text(label, style = MaterialTheme.typography.bodyMedium, color = if (selected) accent else MaterialTheme.colorScheme.onSurface)
-        if (selected) Icon(Icons.Default.Check, null, Modifier.size(18.dp), tint = accent)
+        AnimatedVisibility(selected, enter = fadeIn(tween(200)) + scaleIn(initialScale = 0.6f, animationSpec = tween(200)), exit = fadeOut(tween(120))) {
+            Icon(Icons.Default.Check, null, Modifier.size(18.dp), tint = accent)
+        }
     }
 }
 
 @Composable
-private fun ActionRow(icon: ImageVector, title: String, subtitle: String, onClick: () -> Unit) {
+private fun ActionRow(icon: Painter, title: String, subtitle: String, onClick: () -> Unit) {
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x14FFFFFF)), contentAlignment = Alignment.Center) {
@@ -422,14 +508,17 @@ private fun ActionRow(icon: ImageVector, title: String, subtitle: String, onClic
 private fun AccessStatus(state: GalleryState) {
     val accent = MaterialTheme.colorScheme.primary
     val warn = Color(0xFFE5C57C)
-    val (text, color) = when {
+    val (text, target) = when {
         state.partial -> "Выбранные файлы" to warn
         state.canRead -> "Полный доступ к фото и видео" to accent
         else -> "Доступ не выдан" to Color(0xFFE59A8C)
     }
+    val color by animateColorAsState(target, tween(260), label = "access")
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),
         modifier = Modifier.clip(CircleShape).background(color.copy(alpha = .12f)).padding(horizontal = 12.dp, vertical = 7.dp)) {
         Box(Modifier.size(7.dp).clip(CircleShape).background(color))
-        Text(text, style = MaterialTheme.typography.labelMedium, color = color)
+        AnimatedContent(text, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) }, label = "accessText") { shown ->
+            Text(shown, style = MaterialTheme.typography.labelMedium, color = color)
+        }
     }
 }

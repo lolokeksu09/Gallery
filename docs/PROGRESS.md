@@ -1,5 +1,27 @@
 # Progress
 
+## 0.1.3 motion, tinted grid, build optimization and bug fixes (pending CI)
+- Photo and album grids sit on a faint green-tinted backdrop instead of pure black, so the gaps between
+  photos read as colour. Bars, cards and thumbnails stay near black for AMOLED.
+- Motion pass: tab/album switches use AnimatedContent; the viewer fades and scales in and out over the
+  home screen instead of replacing it; double-tap zoom eases over 260ms; viewer bars slide and fade;
+  grid density changes animate item placement, gaps and corners; Coil crossfades thumbnails; settings
+  selections animate their colours.
+- Build: removed androidx.compose.material-icons-extended (four in-repo vector drawables replace the
+  five icons it supplied), disabled unused build features, excluded packaging metadata, dropped APK
+  dependency metadata, limited resources to ru/en, enabled the Gradle configuration cache and in-process
+  Kotlin compilation.
+- Bug fixes:
+  - Android 14 grants READ_MEDIA_VISUAL_USER_SELECTED alongside full access, so the app wrongly reported
+    limited access and showed the "select more" button with full access. partial() now excludes that case.
+  - refresh() cleared media before reloading, so every resume and every MediaStore change blanked the grid
+    and flashed a spinner. Old media now stays until the new list arrives.
+  - Cancelling the system delete dialog closed the viewer. It now stays open unless the deletion succeeded.
+  - formatDuration showed "90:00" for a 90-minute video; hours are now rendered as h:mm:ss.
+  - GalleryViewModel.onCleared did not call super.
+  - MediaRepository.read carried a dead includeVideos parameter that was always true.
+- versionCode 4 / versionName 0.1.3.
+
 ## 0.1.2 photo, video and settings update (build-verified in CI)
 - Photo grid: gaps between tiles (5-10dp, scaled with column count), rounded corners, date headers with a file count. Tiles no longer touch each other.
 - Pinch with two fingers on the photo grid changes the column count 2-5; the gesture is read on the initial pointer pass and consumed only while two fingers scale, so single-finger scrolling is untouched. A short "N в ряд" badge confirms the change. The value is the existing density setting, so grid and settings stay in sync.
