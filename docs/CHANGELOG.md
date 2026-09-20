@@ -4,6 +4,23 @@ Version-to-version history of the Gallery application. Every version bump adds a
 Sizes and hashes come from the CI build that produced that version; where a build was not measured,
 this file says so instead of guessing.
 
+## 0.1.5 — versionCode 6
+
+Not built yet; this entry is completed once CI reports the size and hash.
+
+Changed
+- Hiding a file is silent. A message naming the file or the vault after a move would tell anyone
+  looking at the screen that a vault exists, so success and refusal say nothing, the progress spinner
+  carries no label, and the viewer button is described as "Скрыть".
+- New colour system. A theme defines accent, backdrop gradient, chrome, card, border and muted colours
+  together, so surfaces shift as one palette instead of an accent dropped on flat black. Surfaces are
+  deep but tinted; pure black is kept for what sits directly behind media and for scrims.
+- Five themes, chosen in settings and applied immediately: Аметист (default), Закат, Океан, Мята (the
+  former palette, kept so nothing is lost) and Чернила.
+- The navigation bar indicator, the settings hero card and every selected state now use the accent
+  rather than Material's default grey.
+- Added a palette vector drawable for the new settings section.
+
 ## 0.1.4 — versionCode 5
 
 Not built yet; this entry is completed once CI reports the size and hash.

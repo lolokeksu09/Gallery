@@ -37,7 +37,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
@@ -70,27 +69,17 @@ private const val TAP_WINDOW_MS = 1500L
 const val MIN_COLUMNS = 2
 const val MAX_COLUMNS = 5
 
-/**
- * Tinted backdrop for the media grids. Surfaces stay near black for AMOLED, but the gaps
- * between photos carry a faint colour instead of reading as a flat black sheet.
- */
-private val GridBackground = Brush.verticalGradient(
-    listOf(Color(0xFF17241E), Color(0xFF0D1411), Color(0xFF0A100D))
-)
-private val CardColor = Color(0xFF0C0E0D)
-private val CardBorder = Color(0xFF1D211F)
-private val Muted = Color(0xFF8C948F)
-
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
-            MaterialTheme(colorScheme = darkColorScheme(
-                primary = Color(0xFFB3E5CB), onPrimary = Color(0xFF123127),
-                background = Color.Black, surface = Color.Black,
-                surfaceVariant = Color(0xFF181B19), onSurface = Color(0xFFEAEFEC)
-            )) { GalleryApp() }
+            val vm: GalleryViewModel = viewModel()
+            val theme by vm.state.collectAsStateWithLifecycle()
+            val palette = paletteFor(theme.theme)
+            CompositionLocalProvider(LocalGalleryPalette provides palette) {
+                MaterialTheme(colorScheme = palette.colorScheme) { GalleryApp(vm) }
+            }
         }
     }
 }
@@ -99,6 +88,7 @@ class MainActivity : ComponentActivity() {
 @Composable private fun albumsIcon(): Painter = painterResource(R.drawable.ic_albums)
 @Composable private fun sortIcon(): Painter = painterResource(R.drawable.ic_sort)
 @Composable private fun gridIcon(): Painter = painterResource(R.drawable.ic_grid)
+@Composable private fun paletteIcon(): Painter = painterResource(R.drawable.ic_palette)
 
 /** Tab, album and sort filtering in one place so every screen derives the same list. */
 private fun mediaFor(state: GalleryState, tab: Int, album: String?): List<GalleryMedia> {
@@ -116,6 +106,7 @@ private fun mediaFor(state: GalleryState, tab: Int, album: String?): List<Galler
 fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
     val vault by vaultVm.state.collectAsStateWithLifecycle()
+    val palette = LocalGalleryPalette.current
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var vaultOpen by rememberSaveable { mutableStateOf(false) }
@@ -203,7 +194,7 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         viewer = held.copy(media = visible)
     }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(palette.backdropBottom)) {
         GalleryHome(state, vm, tab, album, visible, onTab = { tab = it; album = null }, onAlbum = { album = it },
             onOpen = { selected = it }, onAccess = { access() }, onVault = { vaultOpen = true })
         AnimatedVisibility(
@@ -269,6 +260,7 @@ private fun GalleryHome(
     onTab: (Int) -> Unit, onAlbum: (String?) -> Unit, onOpen: (String) -> Unit, onAccess: () -> Unit,
     onVault: () -> Unit
 ) {
+    val palette = LocalGalleryPalette.current
     var sortMenu by remember { mutableStateOf(false) }
     val context = LocalContext.current
     // The vault has no visible entry point: tapping the already open Settings tab five times
@@ -277,7 +269,7 @@ private fun GalleryHome(
     var lastTap by remember { mutableLongStateOf(0L) }
     BackHandler(album != null) { onAlbum(null) }
     Scaffold(
-        containerColor = Color.Black,
+        containerColor = palette.backdropBottom,
         topBar = { TopAppBar(title = { Column {
             Text(if (album != null) visible.firstOrNull()?.album ?: "Альбом" else listOf("Фотографии", "Альбомы", "Избранное", "Настройки")[tab], fontWeight = FontWeight.SemiBold)
             if (tab != 3) Text("${visible.size} файлов", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -293,8 +285,8 @@ private fun GalleryHome(
                     }
                 }
             }
-        }, colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)) },
-        bottomBar = { NavigationBar(containerColor = Color.Black) {
+        }, colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.chrome)) },
+        bottomBar = { NavigationBar(containerColor = palette.chrome) {
             val labels = listOf("Фото", "Альбомы", "Избранное", "Настройки")
             labels.forEachIndexed { index, label ->
                 NavigationBarItem(selected = tab == index, onClick = {
@@ -311,7 +303,11 @@ private fun GalleryHome(
                         taps = 0
                         onTab(index)
                     }
-                }, label = { Text(label) }, icon = {
+                }, label = { Text(label) }, colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = palette.accent, selectedTextColor = palette.accent,
+                    unselectedIconColor = palette.muted, unselectedTextColor = palette.muted,
+                    indicatorColor = palette.accent.copy(alpha = .16f)
+                ), icon = {
                     when (index) {
                         0 -> Icon(photosIcon(), label)
                         1 -> Icon(albumsIcon(), label)
@@ -357,19 +353,20 @@ private fun GalleryHome(
 
 @Composable
 private fun AlbumGrid(media: List<GalleryMedia>, onAlbum: (String?) -> Unit) {
+    val palette = LocalGalleryPalette.current
     val albums = remember(media) { media.groupBy { it.albumKey }.values.toList() }
     LazyVerticalGrid(
         columns = GridCells.Adaptive(100.dp),
         contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize().background(GridBackground)
+        modifier = Modifier.fillMaxSize().background(palette.backdrop)
     ) {
         items(albums, key = { it.first().albumKey }) { items ->
             Column(Modifier.animateItem().clickable { onAlbum(items.first().albumKey) }) {
                 Thumbnail(items.first(), false, Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(12.dp)))
                 Text(items.first().album, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(top = 6.dp))
-                Text("${items.size} файлов", style = MaterialTheme.typography.labelSmall, color = Muted)
+                Text("${items.size} файлов", style = MaterialTheme.typography.labelSmall, color = palette.muted)
             }
         }
     }
@@ -410,6 +407,7 @@ private suspend fun PointerInputScope.detectGridPinch(onStep: (Int) -> Unit) {
 
 @Composable
 private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns: (Int) -> Unit, onOpen: (GalleryMedia) -> Unit) {
+    val palette = LocalGalleryPalette.current
     val groups = remember(media, state.sort) {
         if (state.sort == SortOrder.NAME) linkedMapOf("По названию" to media)
         else media.groupBy { Instant.ofEpochMilli(it.date).atZone(ZoneId.systemDefault()).toLocalDate().format(DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.forLanguageTag("ru"))) }
@@ -424,7 +422,7 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns:
     val gap by animateDpAsState(gridGap(columns.intValue).dp, motion, label = "gap")
     val corner by animateDpAsState((gridGap(columns.intValue) + 4).dp, motion, label = "corner")
     val applyColumns by rememberUpdatedState(onColumns)
-    Box(Modifier.fillMaxSize().background(GridBackground).pointerInput(Unit) {
+    Box(Modifier.fillMaxSize().background(palette.backdrop).pointerInput(Unit) {
         detectGridPinch { step ->
             val next = (columns.intValue + step).coerceIn(MIN_COLUMNS, MAX_COLUMNS)
             if (next != columns.intValue) { columns.intValue = next; applyColumns(next); hint = true }
@@ -440,7 +438,7 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns:
                 item(key = "date:$date", span = { GridItemSpan(maxLineSpan) }) {
                     Column(Modifier.animateItem().padding(start = 4.dp, top = 16.dp, bottom = 10.dp)) {
                         Text(date, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        Text("${items.size} файлов", style = MaterialTheme.typography.labelSmall, color = Muted)
+                        Text("${items.size} файлов", style = MaterialTheme.typography.labelSmall, color = palette.muted)
                     }
                 }
                 items(items, key = { it.key }) { media ->
@@ -451,7 +449,7 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns:
         }
         AnimatedVisibility(hint, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)) {
             Text("${columns.intValue} в ряд",
-                Modifier.clip(CircleShape).background(Color(0xE61A1E1C)).padding(horizontal = 16.dp, vertical = 8.dp),
+                Modifier.clip(CircleShape).background(palette.chrome.copy(alpha = .92f)).padding(horizontal = 16.dp, vertical = 8.dp),
                 style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
     }
@@ -459,7 +457,8 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns:
 
 @Composable
 private fun Thumbnail(media: GalleryMedia, favorite: Boolean, modifier: Modifier) {
-    Box(modifier.background(Color(0xFF141715))) {
+    val palette = LocalGalleryPalette.current
+    Box(modifier.background(palette.card)) {
         AsyncImage(model = media.uri, contentDescription = media.name, contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())
         if (media.video) Text(formatDuration(media.duration), modifier = Modifier.align(Alignment.BottomEnd).padding(5.dp).clip(RoundedCornerShape(6.dp)).background(Color.Black.copy(alpha = .65f)).padding(horizontal = 5.dp, vertical = 2.dp), style = MaterialTheme.typography.labelSmall, color = Color.White)
         if (favorite) Icon(Icons.Default.Favorite, "Избранное", Modifier.align(Alignment.TopEnd).padding(6.dp).size(16.dp), tint = Color.White)
@@ -468,16 +467,18 @@ private fun Thumbnail(media: GalleryMedia, favorite: Boolean, modifier: Modifier
 
 @Composable
 private fun EmptyPage(title: String, subtitle: String, action: String, onAction: () -> Unit) {
+    val palette = LocalGalleryPalette.current
     Column(Modifier.fillMaxSize().padding(28.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
         Icon(photosIcon(), null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
         Spacer(Modifier.height(20.dp)); Text(title, style = MaterialTheme.typography.titleLarge)
-        Spacer(Modifier.height(12.dp)); Text(subtitle, color = Muted)
+        Spacer(Modifier.height(12.dp)); Text(subtitle, color = palette.muted)
         Spacer(Modifier.height(20.dp)); Button(onClick = onAction) { Text(action) }
     }
 }
 
 @Composable
 private fun SettingsPage(state: GalleryState, vm: GalleryViewModel, onAccess: () -> Unit) {
+    val palette = LocalGalleryPalette.current
     val context = LocalContext.current
     val photos = state.media.count { !it.video }
     val videos = state.media.count { it.video }
@@ -486,10 +487,19 @@ private fun SettingsPage(state: GalleryState, vm: GalleryViewModel, onAccess: ()
         LibraryOverview(photos, videos, state.favorites.size)
         SettingsCard("Сетка", gridIcon()) {
             Text("Размер плиток. В самой ленте это же меняется щипком двумя пальцами.",
-                style = MaterialTheme.typography.bodySmall, color = Muted)
+                style = MaterialTheme.typography.bodySmall, color = palette.muted)
             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 (MIN_COLUMNS..MAX_COLUMNS).forEach { count ->
                     GridOption(count, state.columns == count, Modifier.weight(1f)) { vm.columns(count) }
+                }
+            }
+        }
+        SettingsCard("Оформление", paletteIcon()) {
+            Text("Цвет меняет фон ленты, панели и выделение целиком, а не только акцент.",
+                style = MaterialTheme.typography.bodySmall, color = palette.muted)
+            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                GalleryPalettes.forEach { option ->
+                    ThemeOption(option, state.theme == option.id, Modifier.weight(1f)) { vm.theme(option.id) }
                 }
             }
         }
@@ -514,9 +524,10 @@ private fun SettingsPage(state: GalleryState, vm: GalleryViewModel, onAccess: ()
 
 @Composable
 private fun LibraryOverview(photos: Int, videos: Int, favorites: Int) {
+    val palette = LocalGalleryPalette.current
     Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(26.dp))
-        .background(Brush.verticalGradient(listOf(Color(0xFF15211B), Color(0xFF0B0D0C))))
-        .border(1.dp, CardBorder, RoundedCornerShape(26.dp)).padding(20.dp),
+        .background(palette.accentWash)
+        .border(1.dp, palette.border, RoundedCornerShape(26.dp)).padding(20.dp),
         verticalArrangement = Arrangement.spacedBy(18.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
             Box(Modifier.size(46.dp).clip(CircleShape).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
@@ -524,7 +535,7 @@ private fun LibraryOverview(photos: Int, videos: Int, favorites: Int) {
             }
             Column {
                 Text("Галерея", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
-                Text("Всё хранится только на телефоне", style = MaterialTheme.typography.bodySmall, color = Muted)
+                Text("Всё хранится только на телефоне", style = MaterialTheme.typography.bodySmall, color = palette.muted)
             }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -537,22 +548,24 @@ private fun LibraryOverview(photos: Int, videos: Int, favorites: Int) {
 
 @Composable
 private fun Stat(label: String, value: Int, modifier: Modifier) {
+    val palette = LocalGalleryPalette.current
     Column(modifier.clip(RoundedCornerShape(16.dp)).background(Color(0x14FFFFFF)).padding(vertical = 12.dp, horizontal = 10.dp)) {
         AnimatedContent(value, transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(120)) }, label = "stat") { shown ->
             Text("$shown", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
         }
-        Text(label, style = MaterialTheme.typography.labelSmall, color = Muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Text(label, style = MaterialTheme.typography.labelSmall, color = palette.muted, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
 @Composable
 private fun SettingsCard(title: String, icon: Painter, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(CardColor)
-        .border(1.dp, CardBorder, RoundedCornerShape(22.dp)).padding(18.dp),
+    val palette = LocalGalleryPalette.current
+    Column(Modifier.fillMaxWidth().clip(RoundedCornerShape(22.dp)).background(palette.card)
+        .border(1.dp, palette.border, RoundedCornerShape(22.dp)).padding(18.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             Icon(icon, null, Modifier.size(18.dp), tint = MaterialTheme.colorScheme.primary)
-            Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = Muted, letterSpacing = 1.sp)
+            Text(title.uppercase(), style = MaterialTheme.typography.labelMedium, color = palette.muted, letterSpacing = 1.sp)
         }
         content()
     }
@@ -561,6 +574,7 @@ private fun SettingsCard(title: String, icon: Painter, content: @Composable Colu
 /** Grid density option drawn as a miniature preview of the resulting layout. */
 @Composable
 private fun GridOption(count: Int, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val palette = LocalGalleryPalette.current
     val accent = MaterialTheme.colorScheme.primary
     val fill by animateColorAsState(if (selected) accent.copy(alpha = .14f) else Color(0x0FFFFFFF), tween(220), label = "fill")
     val edge by animateColorAsState(if (selected) accent else Color(0x1AFFFFFF), tween(220), label = "edge")
@@ -581,7 +595,32 @@ private fun GridOption(count: Int, selected: Boolean, modifier: Modifier, onClic
                 }
             }
         }
-        Text("$count", style = MaterialTheme.typography.labelMedium, color = if (selected) accent else Muted)
+        Text("$count", style = MaterialTheme.typography.labelMedium, color = if (selected) accent else palette.muted)
+    }
+}
+
+/** A swatch of the theme's own backdrop with its accent on top. */
+@Composable
+private fun ThemeOption(option: GalleryPalette, selected: Boolean, modifier: Modifier, onClick: () -> Unit) {
+    val palette = LocalGalleryPalette.current
+    val edge by animateColorAsState(if (selected) option.accent else palette.border, tween(220), label = "themeEdge")
+    Column(
+        modifier.clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(
+            Modifier.fillMaxWidth().aspectRatio(1f).clip(RoundedCornerShape(14.dp))
+                .background(option.backdrop).border(if (selected) 2.dp else 1.dp, edge, RoundedCornerShape(14.dp)),
+            contentAlignment = Alignment.Center
+        ) {
+            Box(Modifier.size(18.dp).clip(CircleShape).background(option.accent))
+        }
+        Text(
+            option.label, style = MaterialTheme.typography.labelSmall, maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            color = if (selected) option.accent else palette.muted
+        )
     }
 }
 
@@ -601,6 +640,7 @@ private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
 
 @Composable
 private fun ActionRow(icon: Painter, title: String, subtitle: String, onClick: () -> Unit) {
+    val palette = LocalGalleryPalette.current
     Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).clickable(onClick = onClick).padding(vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
         Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(Color(0x14FFFFFF)), contentAlignment = Alignment.Center) {
@@ -608,20 +648,19 @@ private fun ActionRow(icon: Painter, title: String, subtitle: String, onClick: (
         }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.bodyMedium)
-            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = Muted)
+            Text(subtitle, style = MaterialTheme.typography.labelSmall, color = palette.muted)
         }
-        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(20.dp), tint = Muted)
+        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(20.dp), tint = palette.muted)
     }
 }
 
 @Composable
 private fun AccessStatus(state: GalleryState) {
-    val accent = MaterialTheme.colorScheme.primary
-    val warn = Color(0xFFE5C57C)
+    val palette = LocalGalleryPalette.current
     val (text, target) = when {
-        state.partial -> "Выбранные файлы" to warn
-        state.canRead -> "Полный доступ к фото и видео" to accent
-        else -> "Доступ не выдан" to Color(0xFFE59A8C)
+        state.partial -> "Выбранные файлы" to palette.warning
+        state.canRead -> "Полный доступ к фото и видео" to palette.accent
+        else -> "Доступ не выдан" to palette.danger
     }
     val color by animateColorAsState(target, tween(260), label = "access")
     Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp),

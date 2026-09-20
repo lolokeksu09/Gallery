@@ -1,5 +1,16 @@
 # Progress
 
+## 0.1.5 colour system and silent vault (pending CI)
+- Hiding a file says nothing at all: a success or refusal message naming the file or the vault would
+  reveal the vault to anyone watching the screen. Only an unlabelled spinner shows during encryption.
+- New palette system in Theme.kt: accent, backdrop gradient, chrome, card, border and muted colours move
+  together, read through LocalGalleryPalette instead of being hard-coded per screen. Five themes chosen
+  in settings and applied immediately: Аметист (default), Закат, Океан, Мята (the previous colours) and
+  Чернила. Surfaces are deep but tinted; pure black remains behind media and for scrims.
+- User confirmed on device that 0.1.4 works: five taps, password, move with the system dialog, restore
+  and playback all behaved. That covers the vault flow that CI cannot reach.
+- Not verified: the new palettes and the silent move have not been seen on a device.
+
 ## 0.1.4 private vault (built green, audited, not device-tested)
 - Vault reachable only by five taps on the already open Settings tab; the "move to vault" action shows in
   the viewer only while the vault is unlocked. No other entry point exists.

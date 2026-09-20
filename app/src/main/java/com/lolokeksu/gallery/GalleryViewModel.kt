@@ -16,7 +16,7 @@ import kotlinx.coroutines.flow.*
 private val Context.galleryStore by preferencesDataStore("gallery")
 data class GalleryState(
     val media: List<GalleryMedia> = emptyList(), val favorites: Set<String> = emptySet(),
-    val columns: Int = 3, val sort: SortOrder = SortOrder.NEWEST,
+    val columns: Int = 3, val sort: SortOrder = SortOrder.NEWEST, val theme: String = "amethyst",
     val loading: Boolean = true, val error: String? = null, val canRead: Boolean = false,
     val partial: Boolean = false
 )
@@ -27,6 +27,7 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     private val favoritesKey = stringSetPreferencesKey("favorites")
     private val columnsKey = intPreferencesKey("columns")
     private val sortKey = stringPreferencesKey("sort")
+    private val themeKey = stringPreferencesKey("theme")
     private val mutable = MutableStateFlow(GalleryState())
     val state = mutable.asStateFlow()
     private var loadJob: Job? = null
@@ -45,7 +46,8 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
                 val reload = mutable.value.loading
                 mutable.update { it.copy(favorites = prefs[favoritesKey] ?: emptySet(),
                     columns = (prefs[columnsKey] ?: 3).coerceIn(2, 5),
-                    sort = SortOrder.entries.find { s -> s.name == prefs[sortKey] } ?: SortOrder.NEWEST) }
+                    sort = SortOrder.entries.find { s -> s.name == prefs[sortKey] } ?: SortOrder.NEWEST,
+                    theme = prefs[themeKey] ?: "amethyst") }
                 if (reload) refresh()
             }
         }
@@ -74,6 +76,7 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     }
     fun columns(count: Int) = viewModelScope.launch { store.edit { it[columnsKey] = count.coerceIn(2, 5) } }
     fun sort(order: SortOrder) = viewModelScope.launch { store.edit { it[sortKey] = order.name } }
+    fun theme(id: String) = viewModelScope.launch { store.edit { it[themeKey] = id } }
     override fun onCleared() {
         getApplication<Application>().contentResolver.unregisterContentObserver(observer)
         super.onCleared()

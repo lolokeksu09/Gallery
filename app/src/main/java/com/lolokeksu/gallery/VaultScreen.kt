@@ -42,10 +42,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import java.io.File
 
-private val VaultBackground = Brush.verticalGradient(
-    listOf(Color(0xFF17241E), Color(0xFF0D1411), Color(0xFF0A100D))
-)
-
 /** Builds the shape the shared viewer components expect from a decrypted file. */
 private fun VaultItem.asMedia(file: File) = GalleryMedia(
     uri = Uri.fromFile(file), name = name, album = "Хранилище", albumKey = "vault",
@@ -56,6 +52,7 @@ private fun VaultItem.asMedia(file: File) = GalleryMedia(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VaultScreen(vm: VaultViewModel, onClose: () -> Unit) {
+    val palette = LocalGalleryPalette.current
     val state by vm.state.collectAsState()
     var opened by remember { mutableStateOf<VaultItem?>(null) }
     var settings by remember { mutableStateOf(false) }
@@ -63,7 +60,7 @@ fun VaultScreen(vm: VaultViewModel, onClose: () -> Unit) {
 
     BackHandler { if (opened != null) opened = null else onClose() }
 
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
+    Box(Modifier.fillMaxSize().background(palette.backdropBottom)) {
         when {
             !state.unlocked -> VaultGate(state, vm, onClose)
             opened != null -> VaultViewer(
@@ -110,6 +107,7 @@ fun VaultScreen(vm: VaultViewModel, onClose: () -> Unit) {
 
 @Composable
 private fun VaultGate(state: VaultState, vm: VaultViewModel, onClose: () -> Unit) {
+    val palette = LocalGalleryPalette.current
     var password by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
     var visible by remember { mutableStateOf(false) }
@@ -122,7 +120,7 @@ private fun VaultGate(state: VaultState, vm: VaultViewModel, onClose: () -> Unit
     }
 
     Column(
-        Modifier.fillMaxSize().background(VaultBackground).systemBarsPadding().padding(28.dp),
+        Modifier.fillMaxSize().background(palette.backdrop).systemBarsPadding().padding(28.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
@@ -146,7 +144,7 @@ private fun VaultGate(state: VaultState, vm: VaultViewModel, onClose: () -> Unit
                 "Введите пароль, чтобы открыть."
             },
             style = MaterialTheme.typography.bodySmall,
-            color = Color(0xFF8C948F)
+            color = palette.muted
         )
         Spacer(Modifier.height(22.dp))
         OutlinedTextField(
@@ -198,8 +196,9 @@ private fun VaultGrid(
     state: VaultState, vm: VaultViewModel,
     onOpen: (VaultItem) -> Unit, onClose: () -> Unit, onSettings: () -> Unit
 ) {
+    val palette = LocalGalleryPalette.current
     Scaffold(
-        containerColor = Color.Black,
+        containerColor = palette.backdropBottom,
         topBar = {
             TopAppBar(
                 title = {
@@ -219,13 +218,13 @@ private fun VaultGrid(
                     IconButton(onClick = onSettings) { Icon(Icons.Default.Settings, "Сменить пароль") }
                     IconButton(onClick = vm::lock) { Icon(Icons.Default.Lock, "Закрыть хранилище") }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = Color.Black)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = palette.chrome)
             )
         }
     ) { padding ->
         if (state.items.isEmpty()) {
             Column(
-                Modifier.fillMaxSize().padding(padding).background(VaultBackground).padding(32.dp),
+                Modifier.fillMaxSize().padding(padding).background(palette.backdrop).padding(32.dp),
                 verticalArrangement = Arrangement.Center,
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
@@ -237,7 +236,7 @@ private fun VaultGrid(
                     "Откройте фото или видео в галерее и нажмите замок на нижней панели. " +
                         "Пока хранилище открыто, эта кнопка видна.",
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color(0xFF8C948F)
+                    color = palette.muted
                 )
             }
         } else {
@@ -246,7 +245,7 @@ private fun VaultGrid(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalArrangement = Arrangement.spacedBy(8.dp),
                 contentPadding = PaddingValues(8.dp),
-                modifier = Modifier.fillMaxSize().padding(padding).background(VaultBackground)
+                modifier = Modifier.fillMaxSize().padding(padding).background(palette.backdrop)
             ) {
                 items(state.items, key = { it.id }) { item ->
                     VaultThumbnail(
@@ -262,16 +261,17 @@ private fun VaultGrid(
 
 @Composable
 private fun VaultThumbnail(item: VaultItem, vm: VaultViewModel, modifier: Modifier) {
+    val palette = LocalGalleryPalette.current
     val bitmap by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, item.id) {
         value = vm.thumbnail(item.id)
     }
-    Box(modifier.background(Color(0xFF141715))) {
+    Box(modifier.background(palette.card)) {
         bitmap?.let {
             Image(it, item.name, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
         } ?: Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Icon(
                 if (item.video) Icons.Default.PlayArrow else Icons.Default.Lock, null,
-                Modifier.size(20.dp), tint = Color(0xFF4A524D)
+                Modifier.size(20.dp), tint = palette.muted.copy(alpha = .5f)
             )
         }
         if (item.video) {
@@ -291,6 +291,7 @@ private fun VaultViewer(
     items: List<VaultItem>, initial: VaultItem, vm: VaultViewModel,
     onClose: () -> Unit, onRestore: (VaultItem) -> Unit, onDelete: (VaultItem) -> Unit
 ) {
+    val palette = LocalGalleryPalette.current
     if (items.isEmpty()) return
     val pager = rememberPagerState(
         initialPage = items.indexOfFirst { it.id == initial.id }.coerceAtLeast(0),
@@ -352,7 +353,7 @@ private fun VaultViewer(
                     )
                     Text(
                         "${pager.currentPage + 1} / ${items.size}",
-                        style = MaterialTheme.typography.labelSmall, color = Color(0xFF8C948F)
+                        style = MaterialTheme.typography.labelSmall, color = palette.muted
                     )
                 }
             }
@@ -370,7 +371,7 @@ private fun VaultViewer(
                 horizontalArrangement = Arrangement.SpaceEvenly
             ) {
                 TextButton(onClick = { onRestore(current) }) { Text("Вернуть в галерею") }
-                TextButton(onClick = { onDelete(current) }) { Text("Удалить", color = Color(0xFFE59A8C)) }
+                TextButton(onClick = { onDelete(current) }) { Text("Удалить", color = palette.danger) }
             }
         }
     }
@@ -378,6 +379,7 @@ private fun VaultViewer(
 
 @Composable
 private fun VaultPasswordDialog(vm: VaultViewModel, onDismiss: () -> Unit) {
+    val palette = LocalGalleryPalette.current
     var old by remember { mutableStateOf("") }
     var new by remember { mutableStateOf("") }
     var repeat by remember { mutableStateOf("") }
@@ -388,7 +390,7 @@ private fun VaultPasswordDialog(vm: VaultViewModel, onDismiss: () -> Unit) {
             Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(
                     "Файлы не перешифровываются: меняется только защита ключа.",
-                    style = MaterialTheme.typography.bodySmall, color = Color(0xFF8C948F)
+                    style = MaterialTheme.typography.bodySmall, color = palette.muted
                 )
                 OutlinedTextField(old, { old = it }, label = { Text("Текущий пароль") }, singleLine = true,
                     visualTransformation = PasswordVisualTransformation())
