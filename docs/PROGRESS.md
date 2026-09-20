@@ -1,6 +1,9 @@
 # Progress
 
-## 0.1.1 changes (awaiting CI)
+## 0.1.1 verified build
+- Commit: 00483ecd30e74efed7552e768757bbeddb9b3042. Successful build/tests/lint/permission audit: https://github.com/lolokeksu09/Gallery/actions/runs/35515287324
+- APK: 10,281,374 bytes. SHA256: 85e4f3f973919266a1b371ee97486427b03313f4a8cee248217e87562c275c6e.
+- Certificate differs from 0.1.0: in-place update is NOT possible. Reinstallation loses Gallery favorites/settings but not shared photos/videos. Warn user; do not delete anything automatically. Establish persistent signing before next distribution.
 - Compact adaptive album cards; removed technical settings text and offline header suffix.
 - Photo and video library enabled together by default. Both permissions requested together on user action; old video-off preference no longer hides video.
 - Optimized CI: Gradle task cache, two workers, SDK reuse, cancellation of superseded builds, documentation-only push filtering. R8 and all checks remain enabled.
