@@ -17,6 +17,10 @@ jobs:
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
+      # Seconds, no SDK needed: fails fast on resource and icon mistakes that would
+      # otherwise only surface minutes later in aapt2 or the Kotlin compiler.
+      - name: Static checks
+        run: ./tools/verify.sh
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
