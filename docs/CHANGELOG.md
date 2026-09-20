@@ -21,7 +21,9 @@ Added
 - tools/verify.sh: SDK-free checks for malformed XML, AppCompat-only attribute references,
   unresolved R.drawable references, icons outside material-icons-core and loss of the offline
   manifest guarantee. Runs as the first CI step and locally, where no Android SDK is reachable.
-- Tagging v* builds the APK and publishes it as a prerelease with a permanent download link.
+- Releases: the Release APK workflow builds and publishes the APK as a prerelease with a permanent
+  download link. Run it from the Actions tab with a version, or push a v* tag. The tag is created
+  on GitHub at the built commit, because this development sandbox cannot push tag refs.
 
 Changed
 - Dropped androidx.compose.material-icons-extended; four vector drawables in res/drawable cover the
