@@ -147,41 +147,60 @@ fun GalleryApp(vm: GalleryViewModel = viewModel()) {
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
-    val visible = remember(state.media, state.favorites, state.sort, tab, album) { mediaFor(state, tab, album) }
+    // Favorites only change the list on the favorites tab, so toggling a heart elsewhere
+    // does not re-filter and re-sort the whole library.
+    val visible = remember(state.media, state.sort, tab, album, if (tab == 2) state.favorites else null) {
+        mediaFor(state, tab, album)
+    }
     val openKey = selected?.takeIf { key -> visible.any { it.key == key } }
-    // The list and key are held while the viewer plays its exit animation.
-    var viewer by remember { mutableStateOf<Pair<List<GalleryMedia>, String>?>(null) }
-    if (openKey != null && viewer?.second != openKey) viewer = visible to openKey
+    // The request is held while the viewer plays its exit animation. `session` increments on
+    // every open so a reopened viewer never inherits the previous pager position.
+    var viewer by remember { mutableStateOf<ViewerRequest?>(null) }
+    val held = viewer
+    if (openKey == null) {
+        if (held != null && held.open) viewer = held.copy(open = false)
+    } else if (held == null || !held.open || held.key != openKey) {
+        viewer = ViewerRequest(visible, openKey, (held?.session ?: 0) + 1, open = true)
+    } else if (held.media !== visible) {
+        // Refreshes and deletions elsewhere in the library reach the open viewer.
+        viewer = held.copy(media = visible)
+    }
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
-        GalleryHome(state, vm, tab, album, onTab = { tab = it; album = null }, onAlbum = { album = it },
+        GalleryHome(state, vm, tab, album, visible, onTab = { tab = it; album = null }, onAlbum = { album = it },
             onOpen = { selected = it }, onAccess = { access() })
         AnimatedVisibility(
             visible = openKey != null,
             enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
             exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.94f, animationSpec = tween(180))
         ) {
-            viewer?.let { (items, key) ->
-                MediaViewer(items, key, state.favorites, onClose = { selected = null }, onFavorite = vm::favorite,
-                    onDelete = { media ->
-                        try {
-                            val intent = MediaStore.createDeleteRequest(context.contentResolver, listOf(media.uri))
-                            deleteRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
-                        } catch (_: Exception) { Toast.makeText(context, "Не удалось запросить удаление", Toast.LENGTH_SHORT).show() }
-                    })
+            viewer?.let { request ->
+                key(request.session) {
+                    MediaViewer(request.media, request.key, state.favorites, onClose = { selected = null }, onFavorite = vm::favorite,
+                        onDelete = { media ->
+                            try {
+                                val intent = MediaStore.createDeleteRequest(context.contentResolver, listOf(media.uri))
+                                deleteRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
+                            } catch (_: Exception) { Toast.makeText(context, "Не удалось запросить удаление", Toast.LENGTH_SHORT).show() }
+                        })
+                }
             }
         }
     }
 }
 
+/** What the viewer overlay renders, kept alive across its exit animation. */
+private data class ViewerRequest(
+    val media: List<GalleryMedia>, val key: String, val session: Int, val open: Boolean
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun GalleryHome(
-    state: GalleryState, vm: GalleryViewModel, tab: Int, album: String?,
+    state: GalleryState, vm: GalleryViewModel, tab: Int, album: String?, visible: List<GalleryMedia>,
     onTab: (Int) -> Unit, onAlbum: (String?) -> Unit, onOpen: (String) -> Unit, onAccess: () -> Unit
 ) {
     var sortMenu by remember { mutableStateOf(false) }
-    val visible = remember(state.media, state.favorites, state.sort, tab, album) { mediaFor(state, tab, album) }
     BackHandler(album != null) { onAlbum(null) }
     Scaffold(
         containerColor = Color.Black,
@@ -223,9 +242,10 @@ private fun GalleryHome(
             },
             label = "tab"
         ) { (currentTab, currentAlbum) ->
-            val items = remember(state.media, state.favorites, state.sort, currentTab, currentAlbum) {
-                mediaFor(state, currentTab, currentAlbum)
-            }
+            // The active tab reuses the list the caller already built; only the tab animating
+            // out needs its own.
+            val items = if (currentTab == tab && currentAlbum == album) visible
+                else mediaFor(state, currentTab, currentAlbum)
             Column(Modifier.fillMaxSize().padding(padding)) {
                 when {
                     currentTab == 3 -> SettingsPage(state, vm, onAccess)
@@ -307,21 +327,23 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns:
         else media.groupBy { Instant.ofEpochMilli(it.date).atZone(ZoneId.systemDefault()).toLocalDate().format(DateTimeFormatter.ofPattern("d MMMM yyyy", java.util.Locale.forLanguageTag("ru"))) }
     }
     var hint by remember { mutableStateOf(false) }
-    LaunchedEffect(state.columns, hint) { if (hint) { delay(900); hint = false } }
+    // The gesture drives a local count so a fast pinch is not thrown away while the stored
+    // value makes its round trip through DataStore; stored changes flow back in.
+    val columns = remember { mutableIntStateOf(state.columns) }
+    LaunchedEffect(state.columns) { columns.intValue = state.columns }
+    LaunchedEffect(columns.intValue, hint) { if (hint) { delay(900); hint = false } }
     val motion = spring<androidx.compose.ui.unit.Dp>(dampingRatio = Spring.DampingRatioNoBouncy, stiffness = Spring.StiffnessMediumLow)
-    val gap by animateDpAsState(gridGap(state.columns).dp, motion, label = "gap")
-    val corner by animateDpAsState((gridGap(state.columns) + 4).dp, motion, label = "corner")
-    // The gesture detector is started once, so the current values are read through updated state.
-    val columns by rememberUpdatedState(state.columns)
+    val gap by animateDpAsState(gridGap(columns.intValue).dp, motion, label = "gap")
+    val corner by animateDpAsState((gridGap(columns.intValue) + 4).dp, motion, label = "corner")
     val applyColumns by rememberUpdatedState(onColumns)
     Box(Modifier.fillMaxSize().background(GridBackground).pointerInput(Unit) {
         detectGridPinch { step ->
-            val next = (columns + step).coerceIn(MIN_COLUMNS, MAX_COLUMNS)
-            if (next != columns) { applyColumns(next); hint = true }
+            val next = (columns.intValue + step).coerceIn(MIN_COLUMNS, MAX_COLUMNS)
+            if (next != columns.intValue) { columns.intValue = next; applyColumns(next); hint = true }
         }
     }) {
         LazyVerticalGrid(
-            columns = GridCells.Fixed(state.columns),
+            columns = GridCells.Fixed(columns.intValue),
             horizontalArrangement = Arrangement.spacedBy(gap),
             verticalArrangement = Arrangement.spacedBy(gap),
             contentPadding = PaddingValues(start = gap, end = gap, top = 4.dp, bottom = 16.dp)
@@ -340,7 +362,7 @@ private fun PhotoGrid(media: List<GalleryMedia>, state: GalleryState, onColumns:
             }
         }
         AnimatedVisibility(hint, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)) {
-            Text("${state.columns} в ряд",
+            Text("${columns.intValue} в ряд",
                 Modifier.clip(CircleShape).background(Color(0xE61A1E1C)).padding(horizontal = 16.dp, vertical = 8.dp),
                 style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }

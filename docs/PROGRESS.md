@@ -20,6 +20,17 @@
   - formatDuration showed "90:00" for a 90-minute video; hours are now rendered as h:mm:ss.
   - GalleryViewModel.onCleared did not call super.
   - MediaRepository.read carried a dead includeVideos parameter that was always true.
+- Audit fixes on top of the above:
+  - Vector drawables used ?attr/colorControlNormal, an AppCompat attribute this project does not have;
+    aapt2 failed the build. The XML tint is gone (Compose Icon tints through a ColorFilter anyway).
+  - The open viewer held the media snapshot taken when it opened, so refreshes never reached it. It now
+    follows the live list while open and only freezes for the exit animation.
+  - Reopening the viewer within the 180ms exit window reused the old pager state and ignored the tapped
+    photo. Each open now gets its own session key.
+  - A fast pinch could lose a step because the next column count was read from the value still making its
+    round trip through DataStore. The gesture now drives a local count that the stored value syncs into.
+  - The filtered and sorted list was memoised three times with the same keys; it is built once and passed
+    down, and favorites no longer invalidate it outside the favorites tab.
 - versionCode 4 / versionName 0.1.3.
 
 ## 0.1.2 photo, video and settings update (build-verified in CI)
