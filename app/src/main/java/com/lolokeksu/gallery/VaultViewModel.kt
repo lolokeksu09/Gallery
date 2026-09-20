@@ -8,6 +8,8 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -42,8 +44,22 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
 
     private var key: SecretKey? = null
     private val thumbnails = LinkedHashMap<String, ImageBitmap>()
+    private var cachedBytes = 0L
 
     private var pendingItems: List<VaultItem> = emptyList()
+    private var importJob: Job? = null
+
+    /**
+     * Whether the platform delete dialog has already been launched for the pending batch. The
+     * effect that launches it re-runs on activity recreation, and a second dialog for the same
+     * files could be cancelled while the first is confirmed, losing them from both places.
+     */
+    var deleteRequested = false
+        private set
+
+    fun markDeleteRequested() {
+        deleteRequested = true
+    }
 
     init {
         viewModelScope.launch {
@@ -101,16 +117,33 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     fun lock() {
         key = null
         thumbnails.clear()
+        cachedBytes = 0
+        // An import still running would keep working with the key it captured and then republish
+        // pendingDelete, leaving encrypted copies behind while their originals are still in the
+        // gallery. Cancelling makes it clean up after itself.
+        importJob?.cancel()
+        importJob = null
+        deleteRequested = false
+        val abandoned = pendingItems
         pendingItems = emptyList()
         // Dropping the key is what matters and must happen now; unlinking files is done off the
         // main thread because lock() is driven from the lifecycle observer.
-        viewModelScope.launch { withContext(Dispatchers.IO) { repository.clearCache() } }
+        viewModelScope.launch {
+            withContext(Dispatchers.IO) {
+                abandoned.forEach { repository.forget(it.id) }
+                repository.clearCache()
+            }
+        }
         mutable.update {
             it.copy(
                 unlocked = false, items = emptyList(), error = null, message = null,
                 busy = null, pendingDelete = emptyList()
             )
         }
+    }
+
+    private fun forgetThumbnail(id: String) {
+        thumbnails.remove(id)?.let { cachedBytes -= it.width.toLong() * it.height * 4 }
     }
 
     private suspend fun reload() {
@@ -135,10 +168,14 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         val bitmap = withContext(Dispatchers.Default) {
             BitmapFactory.decodeByteArray(raw, 0, raw.size)?.asImageBitmap()
         } ?: return null
-        if (thumbnails.size >= THUMBNAIL_CACHE) {
-            thumbnails.remove(thumbnails.keys.first())
-        }
+        // Bounded by bytes, not by count: a 512px preview decodes to about a megabyte, so a
+        // count-based cache of a hundred entries would hold a hundred megabytes.
         thumbnails[id] = bitmap
+        cachedBytes += bitmap.width.toLong() * bitmap.height * 4
+        while (cachedBytes > THUMBNAIL_BUDGET && thumbnails.size > 1) {
+            val oldest = thumbnails.keys.first()
+            thumbnails.remove(oldest)?.let { cachedBytes -= it.width.toLong() * it.height * 4 }
+        }
         return bitmap
     }
 
@@ -166,27 +203,35 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         if (media.isEmpty()) return
         // A second start would overwrite the pending list and orphan the copies already made.
         if (mutable.value.busy != null || mutable.value.pendingDelete.isNotEmpty()) return
-        viewModelScope.launch {
+        importJob = viewModelScope.launch {
             val imported = mutableListOf<VaultItem>()
             val originals = mutableListOf<GalleryMedia>()
             var failed = 0
-            media.forEachIndexed { index, source ->
-                // A bare counter, never a file name: nothing on screen may name the vault.
-                mutable.update {
-                    it.copy(
-                        busy = if (media.size > 1) "${index + 1} / ${media.size}" else "",
-                        error = null, message = null
-                    )
+            try {
+                media.forEachIndexed { index, source ->
+                    // A bare counter, never a file name: nothing on screen may name the vault.
+                    mutable.update {
+                        it.copy(
+                            busy = if (media.size > 1) "${index + 1} / ${media.size}" else "",
+                            error = null, message = null
+                        )
+                    }
+                    try {
+                        imported += repository.import(current, source)
+                        originals += source
+                    } catch (e: CancellationException) {
+                        throw e
+                    } catch (_: Exception) {
+                        // import() already removed its own partial copy; carry on with the rest.
+                        failed++
+                    }
                 }
-                try {
-                    imported += repository.import(current, source)
-                    originals += source
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (_: Exception) {
-                    // import() already removed its own partial copy; carry on with the rest.
-                    failed++
+            } catch (e: CancellationException) {
+                // Locking mid-batch must not leave copies behind with their originals still there.
+                withContext(NonCancellable) {
+                    withContext(Dispatchers.IO) { imported.forEach { repository.forget(it.id) } }
                 }
+                throw e
             }
             pendingItems = imported
             mutable.update {
@@ -203,9 +248,9 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** The system delete succeeded, so the vault copy is now the only one. */
     /** The system delete succeeded. Deliberately silent: see [hide]. */
     fun confirmHidden() {
+        deleteRequested = false
         pendingItems = emptyList()
         viewModelScope.launch {
             reload()
@@ -222,6 +267,7 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         // orphaned while their originals are still in the gallery.
         val abandoned = pendingItems
         pendingItems = emptyList()
+        deleteRequested = false
         if (abandoned.isNotEmpty()) {
             viewModelScope.launch {
                 withContext(Dispatchers.IO) { abandoned.forEach { repository.forget(it.id) } }
@@ -236,7 +282,7 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
             mutable.update { it.copy(busy = "Восстанавливаю ${item.name}", error = null, message = null) }
             try {
                 repository.restore(current, item)
-                thumbnails.remove(item.id)
+                forgetThumbnail(item.id)
                 reload()
                 mutable.update { it.copy(busy = null, message = "${item.name} возвращён в галерею") }
             } catch (e: CancellationException) {
@@ -250,7 +296,7 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     fun delete(item: VaultItem) {
         viewModelScope.launch {
             withContext(Dispatchers.IO) { repository.forget(item.id) }
-            thumbnails.remove(item.id)
+            forgetThumbnail(item.id)
             reload()
             mutable.update { it.copy(message = "${item.name} удалён без возможности возврата") }
         }
@@ -306,6 +352,6 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         const val MIN_PASSWORD = 6
         const val FREE_ATTEMPTS = 3
         const val MAX_LOCKOUT = 60_000L
-        const val THUMBNAIL_CACHE = 120
+        const val THUMBNAIL_BUDGET = 32L * 1024 * 1024
     }
 }

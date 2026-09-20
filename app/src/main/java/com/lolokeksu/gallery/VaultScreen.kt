@@ -60,7 +60,13 @@ fun VaultScreen(vm: VaultViewModel, onClose: () -> Unit) {
 
     BackHandler { if (opened != null) opened = null else onClose() }
 
-    Box(Modifier.fillMaxSize().background(palette.backdropBottom)) {
+    // The vault is drawn over the gallery, so without swallowing unhandled taps they would reach
+    // the settings page and navigation bar underneath — including the row that opens system
+    // settings, which backgrounds the application and locks the vault mid-entry.
+    Box(
+        Modifier.fillMaxSize().background(palette.backdropBottom)
+            .pointerInput(Unit) { detectTapGestures { } }
+    ) {
         when {
             !state.unlocked -> VaultGate(state, vm, onClose)
             opened != null -> VaultViewer(

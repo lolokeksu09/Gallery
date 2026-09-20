@@ -32,12 +32,23 @@ Changed
 - tools/verify.sh resolves every repository.name(...) call against a declared function.
 
 Fixed
-- Favorites are keyed by content URI and nothing removed a key when its file went away, so the count
-  in settings only ever grew. Stale keys are pruned on refresh, except under limited access.
+- The favorites count in settings only ever grew, because keys were never removed when a file went
+  away. The count is now taken against the library rather than the stored set. Pruning the set was
+  tried first and reverted: with access revoked or only one media permission granted the library
+  reads empty or partial, and pruning would have deleted favorites for files that still exist.
+- A rotation while a hide was pending raised a second platform delete dialog for the same batch;
+  cancelling one while confirming the other would have lost those files from both places.
+- Locking the vault mid-batch left encrypted copies behind while their originals were still in the
+  gallery, because the running import was not cancelled. It is cancelled and cleans up after itself.
+- The encryption scrim did not take touches, so the grid and the selection bar stayed live
+  underneath it, and taps around the vault password screen reached the settings page behind it.
+- Both thumbnail caches were bounded by entry count rather than bytes, so a 512px preview at about
+  a megabyte each could hold well over a hundred megabytes.
 
 Known limitations, not fixed here
 - Favorites still use the content URI as their key, so they are lost when MediaStore re-indexes and
   when a file is restored from the vault (restore creates a new row). A stable key needs a migration.
+  The stored set is never pruned either, so it grows slowly; only the counter is corrected.
 - Filtering, sorting and date grouping still run in composition on the main thread. Fine at this
   library size; revisit if it grows or lag appears.
 

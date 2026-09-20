@@ -27,6 +27,7 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.gestures.calculateZoom
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.foundation.shape.CircleShape
@@ -162,7 +163,11 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
     }
     LaunchedEffect(vault.pendingDelete) {
         val pending = vault.pendingDelete
-        if (pending.isEmpty()) return@LaunchedEffect
+        // This effect re-runs after an activity recreation, and the pending batch lives in the
+        // view model, so without the flag a rotation would raise a second dialog for the same
+        // files: cancelling one while confirming the other loses them from both places.
+        if (pending.isEmpty() || vaultVm.deleteRequested) return@LaunchedEffect
+        vaultVm.markDeleteRequested()
         try {
             // Deliberately a real delete, not the trash: a trashed original stays listed in the
             // system trash, which would defeat the point of hiding it. One dialog covers the batch.
@@ -293,7 +298,13 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         // Hiding a file starts from the gallery viewer with the vault closed, so its progress and
         // its failures have to be shown here rather than inside the vault screen.
         vault.busy?.let { busy ->
-            Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .72f)), contentAlignment = Alignment.Center) {
+            Box(
+                Modifier.fillMaxSize().background(Color.Black.copy(alpha = .72f))
+                    // A scrim that does not take the taps is not a scrim: without this the grid
+                    // and the selection bar stay live while the files are being encrypted.
+                    .pointerInput(Unit) { detectTapGestures { } },
+                contentAlignment = Alignment.Center
+            ) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
                     // Hiding a file uses an empty label on purpose, so nothing on screen names
@@ -633,7 +644,13 @@ private fun SettingsPage(state: GalleryState, vm: GalleryViewModel, onAccess: ()
     val videos = state.media.count { it.video }
     Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 8.dp),
         verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        LibraryOverview(photos, videos, state.favorites.size)
+        // Counted against the library rather than the stored set: a key whose file is gone, or
+        // which belongs to media this grant does not cover, must not inflate the number. Pruning
+        // the set instead would delete favorites for files that still exist.
+        val favorites = remember(state.media, state.favorites) {
+            state.media.count { it.key in state.favorites }
+        }
+        LibraryOverview(photos, videos, favorites)
         SettingsCard("Сетка", gridIcon()) {
             Text("Размер плиток. В самой ленте это же меняется щипком двумя пальцами.",
                 style = MaterialTheme.typography.bodySmall, color = palette.muted)

@@ -34,6 +34,7 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     val state = mutable.asStateFlow()
     private var loadJob: Job? = null
     private val videoThumbnails = LinkedHashMap<String, ImageBitmap>()
+    private var cachedBytes = 0L
     private var observerJob: Job? = null
     private val observer = object : ContentObserver(Handler(Looper.getMainLooper())) {
         override fun onChange(selfChange: Boolean) {
@@ -65,28 +66,12 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val media = repository.read()
                 mutable.update { it.copy(media = media, loading = false) }
-                prune(media, partial = repository.partial())
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 mutable.update { it.copy(loading = false, error = "Не удалось прочитать файлы. Проверь доступ и повтори.") }
             }
         }
     }
-    /**
-     * Favorites are keyed by content URI, and nothing used to remove a key when its file went
-     * away, so the count in settings only ever grew. Skipped under limited access, where the
-     * library is the user's selection and pruning would drop favorites for unselected files.
-     */
-    private suspend fun prune(media: List<GalleryMedia>, partial: Boolean) {
-        if (partial) return
-        val present = media.mapTo(HashSet()) { it.key }
-        store.edit { prefs ->
-            val stored = prefs[favoritesKey] ?: return@edit
-            val kept = stored.filterTo(HashSet()) { it in present }
-            if (kept.size != stored.size) prefs[favoritesKey] = kept
-        }
-    }
-
     fun favorite(key: String) = viewModelScope.launch {
         store.edit { prefs ->
             val old = prefs[favoritesKey] ?: emptySet()
@@ -105,8 +90,14 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     suspend fun videoThumbnail(media: GalleryMedia): ImageBitmap? {
         videoThumbnails[media.key]?.let { return it }
         val bitmap = repository.thumbnail(media.uri, THUMBNAIL_PIXELS)?.asImageBitmap() ?: return null
-        if (videoThumbnails.size >= THUMBNAIL_CACHE) videoThumbnails.remove(videoThumbnails.keys.first())
+        // Bounded by bytes rather than by count, so the cache cannot quietly grow into tens of
+        // megabytes on a library with many videos.
         videoThumbnails[media.key] = bitmap
+        cachedBytes += bitmap.width.toLong() * bitmap.height * 4
+        while (cachedBytes > THUMBNAIL_BUDGET && videoThumbnails.size > 1) {
+            val oldest = videoThumbnails.keys.first()
+            videoThumbnails.remove(oldest)?.let { cachedBytes -= it.width.toLong() * it.height * 4 }
+        }
         return bitmap
     }
 
@@ -115,10 +106,11 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     fun theme(id: String) = viewModelScope.launch { store.edit { it[themeKey] = id } }
     override fun onCleared() {
         videoThumbnails.clear()
+        cachedBytes = 0
         getApplication<Application>().contentResolver.unregisterContentObserver(observer)
         super.onCleared()
     }
 }
 
 private const val THUMBNAIL_PIXELS = 384
-private const val THUMBNAIL_CACHE = 48
+private const val THUMBNAIL_BUDGET = 24L * 1024 * 1024
