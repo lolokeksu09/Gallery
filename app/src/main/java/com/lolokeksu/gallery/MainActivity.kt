@@ -237,8 +237,12 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
             Box(Modifier.fillMaxSize().background(Color.Black.copy(alpha = .72f)), contentAlignment = Alignment.Center) {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
-                    Spacer(Modifier.height(16.dp))
-                    Text(busy, color = Color.White)
+                    // Hiding a file uses an empty label on purpose, so nothing on screen names
+                    // the vault while the encryption runs.
+                    if (busy.isNotEmpty()) {
+                        Spacer(Modifier.height(16.dp))
+                        Text(busy, color = Color.White)
+                    }
                 }
             }
         }

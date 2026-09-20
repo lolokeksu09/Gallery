@@ -161,13 +161,19 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** Encrypts and verifies the copy. The original is only deleted after [confirmHidden]. */
+    /**
+     * Encrypts and verifies the copy. The original is only deleted after [confirmHidden].
+     *
+     * Nothing announces what happened: a message naming the file or the vault would tell anyone
+     * watching the screen that a vault exists, which is the one thing it must not do. Only the
+     * unlabelled progress spinner shows, because a long encryption would otherwise look frozen.
+     */
     fun hide(media: GalleryMedia) {
         val current = key ?: return
         // A second tap would overwrite the pending item and orphan the first encrypted copy.
         if (mutable.value.busy != null || mutable.value.pendingDelete != null) return
         viewModelScope.launch {
-            mutable.update { it.copy(busy = "Шифрую ${media.name}", error = null, message = null) }
+            mutable.update { it.copy(busy = "", error = null, message = null) }
             try {
                 val item = repository.import(current, media)
                 pendingItem = item
@@ -184,29 +190,24 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** The system delete succeeded, so the vault copy is now the only one. */
+    /** The system delete succeeded. Deliberately silent: see [hide]. */
     fun confirmHidden() {
-        val hidden = pendingItem
         pendingItem = null
         viewModelScope.launch {
             reload()
-            mutable.update {
-                it.copy(pendingDelete = null, message = hidden?.let { item -> "${item.name} перенесён в хранилище" })
-            }
+            mutable.update { it.copy(pendingDelete = null) }
         }
     }
 
-    /** The system delete was refused, so the copy is dropped and nothing changes. */
+    /**
+     * The system delete was refused, so the copy is dropped and nothing changes. Also silent: the
+     * user just dismissed that dialog themselves, so they know the file stayed where it was.
+     */
     fun cancelHidden() {
         val item = pendingItem
-        val media = mutable.value.pendingDelete
         pendingItem = null
         if (item != null) viewModelScope.launch { withContext(Dispatchers.IO) { repository.forget(item.id) } }
-        mutable.update {
-            it.copy(
-                pendingDelete = null,
-                message = media?.let { source -> "Оригинал не удалён, поэтому ${source.name} не скрыт" }
-            )
-        }
+        mutable.update { it.copy(pendingDelete = null) }
     }
 
     fun restore(item: VaultItem) {

@@ -133,7 +133,7 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<St
                 IconButton(onClick = { onDelete(current) }) { Icon(Icons.Default.Delete, "Удалить", tint = Color.White) }
                 // Only present while the vault is unlocked, so the feature stays hidden otherwise.
                 if (onHide != null) {
-                    IconButton(onClick = { onHide(current) }) { Icon(Icons.Default.Lock, "В хранилище", tint = Color.White) }
+                    IconButton(onClick = { onHide(current) }) { Icon(Icons.Default.Lock, "Скрыть", tint = Color.White) }
                 }
             }
         }
