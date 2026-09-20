@@ -8,13 +8,23 @@
 - Offline manifest and APK permission audit in GitHub Actions.
 - Duration unit tests.
 
-## Next
-Commit 638787f7d0d7186dba593c73fdcc1669a3a82066 passed tests, lint and assembleDebug, plus APK permission audit in run 35514480269. Artifact downloaded successfully. Unoptimized debug APK is 67,084,094 bytes; enabling R8/resource shrinking before delivery. Device behavior is still unverified.
-Second CI attempt reached Kotlin compilation and found a missing enableEdgeToEdge import; fixed. Media3 PlayerView use explicitly opts in to its unstable UI API.
-CI first attempt failed before compilation: setup-android requested obsolete SDK package `tools`. Fixed by explicitly requesting only platform-tools. Zoom now yields unzoomed horizontal drags to the pager.
-1. Run GitHub build, fix compilation/lint/test failures.
-2. Download successful APK artifact and deliver.
-3. Physical Android13 smoke tests: denied/granted permission; photos only; optional video; empty library; large library; zoom/swipe; rotate; sharing; delete confirm/cancel; permission revocation; airplane mode.
-4. Establish stable private signing before distributing updates as stable.
+## APK 0.1.0 ready for device testing
+- Built commit: 6c91585a5ed7c4359bdf56f45ed83232ff33e5ec.
+- Successful run: https://github.com/lolokeksu09/Gallery/actions/runs/35514670112
+- Unit tests, Android Lint, assembleDebug and actual APK permission audit passed.
+- R8/resource shrinking reduced APK from 67,084,094 to 10,330,530 bytes.
+- Downloaded and saved as Gallery-0.1.0.apk for delivery in chat.
+- SHA256: c2c1d149325d80424a3424df1b3bf2a9d514dd0191b02dca43b2f42d6cbb40ae
+- APK permissions: READ_MEDIA_IMAGES, READ_MEDIA_VIDEO, READ_MEDIA_VISUAL_USER_SELECTED, app-local signature-level DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION. No network permission.
 
-No APK or physical-device test is claimed by this checkpoint.
+## Next
+1. Physical Android13 smoke tests: denied/granted permission; photos only; optional video; empty/large library; zoom/swipe; rotate; sharing; deletion confirm/cancel; permission revocation; airplane mode.
+2. Establish stable private signing before stable updates. Current CI debug signing does not guarantee cross-run update compatibility. Uninstalling removes app-local favorites/settings; warn before recommending it.
+3. Add metadata paging if large-library measurements justify it.
+
+No emulator or physical-device execution performed. Successful compilation is not complete runtime validation.
+
+## Resolved
+- Replaced obsolete SDK package tools with platform-tools.
+- Added missing enableEdgeToEdge import and Media3 UI API opt-in.
+- Unzoomed drags yield to pager using conditional transformable panning.
