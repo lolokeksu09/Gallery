@@ -12,4 +12,7 @@
 - Keep dependency count and modules small. No unrelated refactors.
 - Test and lint before claiming completion; successful compilation is not physical-device validation.
 - Update PROGRESS with the exact verified status and next action in every meaningful implementation commit.
+- Every version bump adds an entry to docs/CHANGELOG.md: what changed since the previous version, plus the
+  CI build link, APK size and SHA256. Say when a number was not measured instead of guessing it.
+- Commit each change on its own rather than batching unrelated work into one commit.
 - Never put release signing keys in source. Debug APKs are test builds, not stable releases.
