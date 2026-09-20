@@ -10,6 +10,8 @@
 - Request photo and video access together on user action. Both are enabled by default. Respect denial, partial grants and Android 14 selected-media access; no permission may be silently granted.
 - Never delete media without the platform confirmation. Never modify originals for previews.
 - Keep dependency count and modules small. No unrelated refactors.
+- Run ./tools/verify.sh before every push. It needs no Android SDK and catches resource, drawable and
+  icon mistakes in seconds; the sandbox cannot compile, so CI is the only compiler.
 - Test and lint before claiming completion; successful compilation is not physical-device validation.
 - Update PROGRESS with the exact verified status and next action in every meaningful implementation commit.
 - Every version bump adds an entry to docs/CHANGELOG.md: what changed since the previous version, plus the
