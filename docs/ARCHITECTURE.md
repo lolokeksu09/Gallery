@@ -4,6 +4,11 @@ One app module. Compose UI -> GalleryViewModel -> MediaRepository -> MediaStore.
 
 DataStore stores small settings and favorite URI sets; no Room/Hilt/navigation framework is needed for this initial small app. This deliberately simplifies the initial proposal. A content observer refreshes metadata, debounced; no background service. Metadata is currently loaded as a list; bitmap previews are lazy and downsampled. Paging is a follow-up if very large libraries prove slow.
 
+Vault: VaultCrypto holds the format, VaultRepository the encrypted files in filesDir/vault plus per-item
+encrypted metadata and thumbnails, and VaultViewModel the unlocked data key, which lives only in memory.
+The vault screen reuses ZoomableImage and VideoPlayer from the viewer and decrypts each page into
+cacheDir/vault-open only when it is reached. Only platform crypto is used; no dependency was added.
+
 Build tuning: Gradle configuration cache, build cache, parallel execution capped at two workers and
 in-process Kotlin compilation. The application avoids material-icons-extended; the few non-core icons
 are vector drawables in res/drawable. Unused build features, packaging metadata and APK dependency

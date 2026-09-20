@@ -75,7 +75,7 @@ private fun Context.activity(): Activity? {
 
 @Composable
 fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<String>, onClose: () -> Unit,
-    onFavorite: (String) -> Unit, onDelete: (GalleryMedia) -> Unit) {
+    onFavorite: (String) -> Unit, onDelete: (GalleryMedia) -> Unit, onHide: ((GalleryMedia) -> Unit)? = null) {
     val context = LocalContext.current
     val view = LocalView.current
     val pager = rememberPagerState(initialPage = media.indexOfFirst { it.key == initialKey }.coerceAtLeast(0), pageCount = { media.size })
@@ -131,6 +131,10 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<St
                     } catch (_: Exception) { Toast.makeText(context, "Не удалось отправить файл", Toast.LENGTH_SHORT).show() }
                 }) { Icon(Icons.Default.Share, "Поделиться", tint = Color.White) }
                 IconButton(onClick = { onDelete(current) }) { Icon(Icons.Default.Delete, "Удалить", tint = Color.White) }
+                // Only present while the vault is unlocked, so the feature stays hidden otherwise.
+                if (onHide != null) {
+                    IconButton(onClick = { onHide(current) }) { Icon(Icons.Default.Lock, "В хранилище", tint = Color.White) }
+                }
             }
         }
     }
@@ -140,7 +144,7 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<St
 }
 
 @Composable
-private fun ZoomableImage(media: GalleryMedia, onZoom: (Boolean) -> Unit, onTap: () -> Unit) {
+internal fun ZoomableImage(media: GalleryMedia, onZoom: (Boolean) -> Unit, onTap: () -> Unit) {
     var scale by remember(media.key) { mutableFloatStateOf(1f) }
     var offset by remember(media.key) { mutableStateOf(Offset.Zero) }
     var bounds by remember { mutableStateOf(IntSize.Zero) }
@@ -190,7 +194,7 @@ private fun ZoomableImage(media: GalleryMedia, onZoom: (Boolean) -> Unit, onTap:
  */
 @Composable
 @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-private fun VideoPlayer(media: GalleryMedia, chrome: Boolean, onChrome: (Boolean) -> Unit) {
+internal fun VideoPlayer(media: GalleryMedia, chrome: Boolean, onChrome: (Boolean) -> Unit) {
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val player = remember(media.key) {

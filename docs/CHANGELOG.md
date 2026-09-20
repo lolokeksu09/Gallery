@@ -4,6 +4,28 @@ Version-to-version history of the Gallery application. Every version bump adds a
 Sizes and hashes come from the CI build that produced that version; where a build was not measured,
 this file says so instead of guessing.
 
+## 0.1.4 — versionCode 5
+
+Not built yet; this entry is completed once CI reports the size and hash.
+
+Added
+- Private vault, reachable only by tapping the already open Settings tab five times. Nothing else in the
+  interface hints that it exists, and the "move to vault" button appears in the viewer only while the
+  vault is unlocked.
+- Files are encrypted with AES-GCM. A random data key encrypts the media and is wrapped with a PBKDF2
+  key derived from the password, so changing the password rewraps one small blob instead of rewriting
+  every file. Media is written as independent 1 MiB frames, each binding its frame index as associated
+  data, so a reordered, spliced or truncated file fails to decrypt instead of returning wrong bytes.
+- Import never destroys anything on its own: the encrypted copy is decrypted again and its SHA-256
+  compared with the source, and only then does Android ask to delete the original. Refusing that dialog
+  discards the vault copy, so a file is never in neither place.
+- Restore writes a file back into MediaStore; deleting from the vault asks for confirmation and says
+  plainly that there is nothing left to restore from.
+- The vault locks when the application leaves the foreground, dropping the key and wiping every
+  decrypted copy from the cache. Repeated wrong passwords add a growing delay.
+- Encrypted per-item thumbnails, so the vault grid never decrypts whole photos or videos.
+- VaultCryptoTest covers frame boundaries, wrong keys, altered bytes, truncation and reordering.
+
 ## 0.1.3 — versionCode 4
 
 Build: https://github.com/lolokeksu09/Gallery/actions/runs/35518294962 (commit 393baf5).

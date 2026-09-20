@@ -14,4 +14,14 @@ The first 0.1.1 launch requests combined access once if full access is missing, 
 
 MediaStore is the source of truth. Never copy originals or request write-all-files. File changes and permission changes refresh foreground results. Sharing passes read-only URI access to the application explicitly chosen by the user; that other app's networking is outside Gallery's control.
 
-Deferred: editing, private vault, cloud, custom trash. Installed test build must be tested by user before stable status.
+Private vault (0.1.4): hidden behind five taps on the already open Settings tab; no other entry point exists.
+Files are encrypted with AES-GCM under a random data key that is itself wrapped by a PBKDF2 key from the
+user's password, so a password change rewraps one blob instead of rewriting media. Media is stored as
+independent 1 MiB frames, each binding its index as associated data, so reordering, splicing or truncation
+fail to decrypt rather than returning wrong bytes. Import encrypts, decrypts the copy again and compares
+SHA-256 before the platform delete dialog is shown for the original; a refused deletion discards the copy.
+Restore writes the file back to MediaStore. Viewing decrypts into the application cache, which is wiped
+whenever the vault locks; the vault locks itself when the application leaves the foreground. There is no
+password recovery, and the user is told so before the vault is created.
+
+Deferred: editing, cloud, custom trash. Installed test build must be tested by user before stable status.

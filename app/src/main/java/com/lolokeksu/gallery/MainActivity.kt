@@ -62,6 +62,10 @@ import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 
+private const val SETTINGS_TAB = 3
+private const val VAULT_TAPS = 5
+private const val TAP_WINDOW_MS = 1500L
+
 /** Minimum and maximum number of grid columns reachable with the pinch gesture. */
 const val MIN_COLUMNS = 2
 const val MAX_COLUMNS = 5
@@ -109,10 +113,12 @@ private fun mediaFor(state: GalleryState, tab: Int, album: String?): List<Galler
 }
 
 @Composable
-fun GalleryApp(vm: GalleryViewModel = viewModel()) {
+fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
+    val vault by vaultVm.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var vaultOpen by rememberSaveable { mutableStateOf(false) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var album by rememberSaveable { mutableStateOf<String?>(null) }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
@@ -142,8 +148,34 @@ fun GalleryApp(vm: GalleryViewModel = viewModel()) {
         // A cancelled deletion must leave the viewer open on the same file.
         if (result.resultCode == Activity.RESULT_OK) selected = null
     }
+    // The vault locks itself whenever the application leaves the foreground, which also wipes
+    // every decrypted copy from the cache.
+    val hideRequest = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            vaultVm.confirmHidden()
+            selected = null
+        } else {
+            vaultVm.cancelHidden()
+        }
+        vm.refresh()
+    }
+    LaunchedEffect(vault.pendingDelete) {
+        val pending = vault.pendingDelete ?: return@LaunchedEffect
+        try {
+            val intent = MediaStore.createDeleteRequest(context.contentResolver, listOf(pending.uri))
+            hideRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
+        } catch (_: Exception) {
+            vaultVm.cancelHidden()
+        }
+    }
     DisposableEffect(lifecycle) {
-        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_RESUME) vm.refresh() }
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_RESUME -> vm.refresh()
+                Lifecycle.Event.ON_STOP -> { vaultVm.lock(); vaultOpen = false }
+                else -> Unit
+            }
+        }
         lifecycle.addObserver(observer)
         onDispose { lifecycle.removeObserver(observer) }
     }
@@ -168,7 +200,7 @@ fun GalleryApp(vm: GalleryViewModel = viewModel()) {
 
     Box(Modifier.fillMaxSize().background(Color.Black)) {
         GalleryHome(state, vm, tab, album, visible, onTab = { tab = it; album = null }, onAlbum = { album = it },
-            onOpen = { selected = it }, onAccess = { access() })
+            onOpen = { selected = it }, onAccess = { access() }, onVault = { vaultOpen = true })
         AnimatedVisibility(
             visible = openKey != null,
             enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
@@ -182,9 +214,17 @@ fun GalleryApp(vm: GalleryViewModel = viewModel()) {
                                 val intent = MediaStore.createDeleteRequest(context.contentResolver, listOf(media.uri))
                                 deleteRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
                             } catch (_: Exception) { Toast.makeText(context, "Не удалось запросить удаление", Toast.LENGTH_SHORT).show() }
-                        })
+                        },
+                        onHide = if (vault.unlocked) ({ media -> vaultVm.hide(media) }) else null)
                 }
             }
+        }
+        AnimatedVisibility(
+            visible = vaultOpen,
+            enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
+            exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.94f, animationSpec = tween(180))
+        ) {
+            VaultScreen(vaultVm) { vaultOpen = false }
         }
     }
 }
@@ -198,9 +238,15 @@ private data class ViewerRequest(
 @Composable
 private fun GalleryHome(
     state: GalleryState, vm: GalleryViewModel, tab: Int, album: String?, visible: List<GalleryMedia>,
-    onTab: (Int) -> Unit, onAlbum: (String?) -> Unit, onOpen: (String) -> Unit, onAccess: () -> Unit
+    onTab: (Int) -> Unit, onAlbum: (String?) -> Unit, onOpen: (String) -> Unit, onAccess: () -> Unit,
+    onVault: () -> Unit
 ) {
     var sortMenu by remember { mutableStateOf(false) }
+    val context = LocalContext.current
+    // The vault has no visible entry point: tapping the already open Settings tab five times
+    // in a row is the only way in.
+    var taps by remember { mutableIntStateOf(0) }
+    var lastTap by remember { mutableLongStateOf(0L) }
     BackHandler(album != null) { onAlbum(null) }
     Scaffold(
         containerColor = Color.Black,
@@ -223,7 +269,21 @@ private fun GalleryHome(
         bottomBar = { NavigationBar(containerColor = Color.Black) {
             val labels = listOf("Фото", "Альбомы", "Избранное", "Настройки")
             labels.forEachIndexed { index, label ->
-                NavigationBarItem(selected = tab == index, onClick = { onTab(index) }, label = { Text(label) }, icon = {
+                NavigationBarItem(selected = tab == index, onClick = {
+                    if (index == SETTINGS_TAB && tab == SETTINGS_TAB) {
+                        val now = System.currentTimeMillis()
+                        taps = if (now - lastTap < TAP_WINDOW_MS) taps + 1 else 1
+                        lastTap = now
+                        val left = VAULT_TAPS - taps
+                        when {
+                            left <= 0 -> { taps = 0; onVault() }
+                            left <= 2 -> Toast.makeText(context, "Ещё $left", Toast.LENGTH_SHORT).show()
+                        }
+                    } else {
+                        taps = 0
+                        onTab(index)
+                    }
+                }, label = { Text(label) }, icon = {
                     when (index) {
                         0 -> Icon(photosIcon(), label)
                         1 -> Icon(albumsIcon(), label)
