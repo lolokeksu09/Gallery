@@ -41,7 +41,6 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
     val state = mutable.asStateFlow()
 
     private var key: SecretKey? = null
-    private var failures = 0
     private val thumbnails = LinkedHashMap<String, ImageBitmap>()
 
     private var pendingItem: VaultItem? = null
@@ -51,7 +50,10 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
             // A crash can leave decrypted copies behind; the guarantee is that they never
             // outlive the application, so startup clears them too.
             withContext(Dispatchers.IO) { repository.clearCache() }
-            mutable.update { it.copy(configured = repository.configured()) }
+            // The stored count survives a force stop, so the delay it earned survives too.
+            val stored = repository.failures()
+            mutable.update { it.copy(configured = repository.configured(), lockedOutFor = waitFor(stored)) }
+            waitOut(waitFor(stored))
         }
     }
 
@@ -82,23 +84,14 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
             mutable.update { it.copy(busy = "Проверяю пароль", error = null) }
             val unlocked = repository.unlock(password.toCharArray())
             if (unlocked == null) {
-                failures++
-                // Deriving the key already costs a moment; add a growing wait after repeated misses.
-                val wait = if (failures >= FREE_ATTEMPTS) {
-                    minOf(1000L shl minOf(failures - FREE_ATTEMPTS, 6), MAX_LOCKOUT)
-                } else {
-                    0L
-                }
+                val wait = waitFor(repository.recordFailure())
                 mutable.update {
                     it.copy(busy = null, error = "Неверный пароль", lockedOutFor = wait)
                 }
-                if (wait > 0) {
-                    delay(wait)
-                    mutable.update { it.copy(lockedOutFor = 0) }
-                }
+                waitOut(wait)
                 return@launch
             }
-            failures = 0
+            repository.clearFailures()
             key = unlocked
             mutable.update { it.copy(unlocked = true, busy = null, error = null, lockedOutFor = 0) }
             reload()
@@ -259,6 +252,16 @@ class VaultViewModel(app: Application) : AndroidViewModel(app) {
                 mutable.update { it.copy(busy = null, error = e.message ?: "Не удалось сменить пароль") }
             }
         }
+    }
+
+    /** Deriving the key already costs a moment; add a growing wait after repeated misses. */
+    private fun waitFor(failures: Int): Long =
+        if (failures >= FREE_ATTEMPTS) minOf(1000L shl minOf(failures - FREE_ATTEMPTS, 6), MAX_LOCKOUT) else 0L
+
+    private suspend fun waitOut(wait: Long) {
+        if (wait <= 0) return
+        delay(wait)
+        mutable.update { it.copy(lockedOutFor = 0) }
     }
 
     fun clearNotice() = mutable.update { it.copy(error = null, message = null) }

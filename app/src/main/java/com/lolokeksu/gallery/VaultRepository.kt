@@ -9,6 +9,7 @@ import android.net.Uri
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.datastore.preferences.core.byteArrayPreferencesKey
+import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.preferencesDataStore
@@ -42,6 +43,7 @@ class VaultException(message: String) : Exception(message)
 class VaultRepository(private val context: Context) {
     private val saltKey = byteArrayPreferencesKey("salt")
     private val wrappedKey = byteArrayPreferencesKey("wrapped_key")
+    private val failuresKey = intPreferencesKey("failures")
     private val dir = File(context.filesDir, "vault")
     private val cache = File(context.cacheDir, "vault-open")
 
@@ -63,7 +65,7 @@ class VaultRepository(private val context: Context) {
         val salt = VaultCrypto.randomBytes(VaultCrypto.SALT_BYTES)
         val dataKey = VaultCrypto.newDataKey()
         val wrapped = VaultCrypto.seal(VaultCrypto.deriveKey(password, salt), dataKey.encoded)
-        context.vaultStore.edit { it[saltKey] = salt; it[wrappedKey] = wrapped }
+        context.vaultStore.edit { it[saltKey] = salt; it[wrappedKey] = wrapped; it[failuresKey] = 0 }
         dir.mkdirs()
         dataKey
     }
