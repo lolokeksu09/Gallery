@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.provider.Settings
+import android.view.WindowManager
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
@@ -158,6 +159,21 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         } catch (_: Exception) {
             vaultVm.cancelHidden()
         }
+    }
+    // The recents snapshot is taken as the application leaves the foreground, so an unlocked
+    // vault would otherwise sit in the task switcher, visible after the screen lock. FLAG_SECURE
+    // blanks that snapshot and blocks screenshots, screen recording and casting in one move.
+    // It is held only while the vault is involved: half this library is screenshots, so blocking
+    // them everywhere would break ordinary use.
+    val secure = vaultOpen || vault.unlocked
+    DisposableEffect(secure) {
+        val window = context.activity()?.window
+        if (secure) {
+            window?.addFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        } else {
+            window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE)
+        }
+        onDispose { window?.clearFlags(WindowManager.LayoutParams.FLAG_SECURE) }
     }
     DisposableEffect(lifecycle) {
         val observer = LifecycleEventObserver { _, event ->
