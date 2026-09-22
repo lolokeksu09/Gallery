@@ -47,12 +47,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -638,13 +640,39 @@ private fun PhotoGrid(
     val gap by animateDpAsState(gridGap(columns.intValue).dp, motion, label = "gap")
     val corner by animateDpAsState((gridGap(columns.intValue) + 4).dp, motion, label = "corner")
     val applyColumns by rememberUpdatedState(onColumns)
+    val haptics = LocalHapticFeedback.current
+    val gridState = rememberLazyGridState()
+    // Every key in the grid says which day it belongs to: headers are "date:", tiles are their
+    // own media key. That is enough to name the position without a second list.
+    val dateOfKey = remember(groups) {
+        buildMap {
+            groups.forEach { (date, items) ->
+                put("date:$date", date)
+                items.forEach { put(it.key, date) }
+            }
+        }
+    }
+    // LazyVerticalGrid has no sticky headers — foundation only has them for lists — so the date
+    // of the current position rides above the grid while it moves and fades once it settles.
+    val scrolling = gridState.isScrollInProgress
+    var dateVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(scrolling) {
+        if (scrolling) dateVisible = true else { delay(800); dateVisible = false }
+    }
+    val currentDate by remember(dateOfKey) {
+        derivedStateOf { gridState.layoutInfo.visibleItemsInfo.firstOrNull()?.key?.let(dateOfKey::get) }
+    }
     Box(Modifier.fillMaxSize().background(palette.backdrop).pointerInput(Unit) {
         detectGridPinch { step ->
             val next = (columns.intValue + step).coerceIn(MIN_COLUMNS, MAX_COLUMNS)
-            if (next != columns.intValue) { columns.intValue = next; applyColumns(next); hint = true }
+            if (next != columns.intValue) {
+                columns.intValue = next; applyColumns(next); hint = true
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
         }
     }) {
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Fixed(columns.intValue),
             horizontalArrangement = Arrangement.spacedBy(gap),
             verticalArrangement = Arrangement.spacedBy(gap),
@@ -667,11 +695,24 @@ private fun PhotoGrid(
                                 // Outside selection a tap opens; inside it toggles. A long press
                                 // always starts or extends the selection.
                                 onClick = { if (selection.isEmpty()) onOpen(media) else onToggle(media) },
-                                onLongClick = { onToggle(media) }
+                                onLongClick = {
+                                    // The press that starts a selection should be felt, not just seen.
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onToggle(media)
+                                }
                             ),
                         vm, selected = media.key in selection)
                 }
             }
+        }
+        // The density hint wins the spot while it is up: both are the same pill and stacking them
+        // would put one on top of the other.
+        AnimatedVisibility(dateVisible && !hint && currentDate != null,
+            enter = fadeIn(tween(160)), exit = fadeOut(tween(260)),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)) {
+            Text(currentDate.orEmpty(),
+                Modifier.clip(CircleShape).background(palette.elevated).padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
         AnimatedVisibility(hint, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)) {
             Text("${columns.intValue} в ряд",
