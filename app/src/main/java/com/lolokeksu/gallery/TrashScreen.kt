@@ -48,11 +48,11 @@ fun TrashScreen(
     BackHandler { if (selection.isNotEmpty()) selection = emptySet() else onClose() }
 
     Box(
-        Modifier.fillMaxSize().background(palette.backdropBottom)
+        Modifier.fillMaxSize().background(palette.backdrop)
             .pointerInput(Unit) { detectTapGestures { } }
     ) {
         Scaffold(
-            containerColor = palette.backdropBottom,
+            containerColor = palette.backdrop,
             topBar = {
                 TopAppBar(
                     title = {
@@ -62,7 +62,7 @@ fun TrashScreen(
                                 fontWeight = FontWeight.SemiBold
                             )
                             Text(
-                                if (selection.isEmpty()) "${items.size} файлов · Android удалит через 30 дней"
+                                if (selection.isEmpty()) fileCount(items.size) + " · Android удалит через 30 дней"
                                 else "Действие подтвердит Android",
                                 style = MaterialTheme.typography.labelSmall,
                                 color = palette.accent
@@ -136,8 +136,8 @@ fun TrashScreen(
             title = { Text("Удалить навсегда?") },
             text = {
                 Text(
-                    "${chosen.size} файлов будут стёрты без возможности восстановления. " +
-                        "Android спросит подтверждение ещё раз."
+                    (if (chosen.size == 1) "Файл будет стёрт" else fileCount(chosen.size) + " будут стёрты") +
+                        " без возможности восстановления. Android спросит подтверждение ещё раз."
                 )
             },
             confirmButton = {

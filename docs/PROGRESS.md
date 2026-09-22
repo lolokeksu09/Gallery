@@ -1,5 +1,18 @@
 # Progress
 
+## 0.1.9 Material 3 AMOLED (pending CI)
+- The user called the layout "нейрослоп" and asked for a modern Material 3 AMOLED design. The page
+  is now true black and the tint lives on Material's tonal container ramp, not in a gradient behind
+  the whole screen.
+- Deliberate reversal, stated to the user before the work: the coloured gaps from 0.1.2 and the
+  backdrop gradient from 0.1.5 are gone. Both were things the user had asked for; a gradient behind
+  a nearly empty Избранное had become the loudest element on the screen.
+- Settings rebuilt as Material settings groups. The statistics card and the explanatory paragraph
+  under every control are gone. File counts left the screen titles and the date headers.
+- Russian plurals fixed through fileCount(), which FormattingTest covers including the
+  eleven-to-fourteen exception.
+- Not verified: not built yet, not run on a device.
+
 ## 0.1.8 trash screen (built green, confirmed working on the device)
 - 0.1.6 made deletion recoverable through Android's trash but never listed it anywhere, so the user
   looked for a trash in the application and did not find one. Settings now has one.

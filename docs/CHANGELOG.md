@@ -4,6 +4,38 @@ Version-to-version history of the Gallery application. Every version bump adds a
 Sizes and hashes come from the CI build that produced that version; where a build was not measured,
 this file says so instead of guessing.
 
+## 0.1.9 — versionCode 10
+
+Not built yet; this entry is completed once CI reports the size and hash.
+
+Changed — Material 3 on AMOLED
+- The page is true black on every theme. The backdrop gradient is gone, and with it the tinted gaps
+  between photographs: the tint now lives only where interface is actually drawn. This reverses the
+  coloured gaps added in 0.1.2 and the gradient added in 0.1.5, deliberately, because a gradient
+  behind a nearly empty screen became the loudest thing on it.
+- Themes are now an accent plus Material's tonal container ramp (surfaceContainerLow / Container /
+  High) tinted towards that accent's hue. All five keep their names — Аметист, Закат, Океан, Мята,
+  Чернила — and their accents moved to Material's tone 80, which is brighter on black.
+- The colour scheme fills Material's container roles instead of four of them, so menus, dialogs,
+  sheets and the navigation bar get their tones from the theme rather than from defaults.
+- The top bar is one line and transparent over the feed, taking the container tone only once
+  content scrolls under it, which is Material's own behaviour for a bar on a dark surface.
+
+Changed — the layout that read as generated
+- File counts left the screen titles and the date headers. A count now appears where it is acted
+  on: an album tile, the trash, the vault.
+- Settings lost the statistics card and every explanatory paragraph under a control, and its five
+  identical bordered cards became Material settings groups: a quiet accent label over rows on the
+  container tone. The sections are Вид, Сортировка, Файлы, Доступ.
+
+Fixed
+- Russian plurals. The interface said "1 файлов" and "3 файлов" everywhere because the number was
+  pasted into one fixed form. fileCount() picks файл / файла / файлов, including the eleven-to-
+  fourteen exception that the last digit alone gets wrong, and FormattingTest covers it.
+
+Removed
+- ic_grid and ic_palette: the settings sections no longer carry icons.
+
 ## 0.1.8 — versionCode 9
 
 Build: https://github.com/lolokeksu09/Gallery/actions/runs/35691402664 (commit 21a3341).

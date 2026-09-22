@@ -64,7 +64,7 @@ fun VaultScreen(vm: VaultViewModel, onClose: () -> Unit) {
     // the settings page and navigation bar underneath — including the row that opens system
     // settings, which backgrounds the application and locks the vault mid-entry.
     Box(
-        Modifier.fillMaxSize().background(palette.backdropBottom)
+        Modifier.fillMaxSize().background(palette.backdrop)
             .pointerInput(Unit) { detectTapGestures { } }
     ) {
         when {
@@ -204,14 +204,14 @@ private fun VaultGrid(
 ) {
     val palette = LocalGalleryPalette.current
     Scaffold(
-        containerColor = palette.backdropBottom,
+        containerColor = palette.backdrop,
         topBar = {
             TopAppBar(
                 title = {
                     Column {
                         Text("Хранилище", fontWeight = FontWeight.SemiBold)
                         Text(
-                            "${state.items.size} файлов · зашифровано",
+                            fileCount(state.items.size) + " · зашифровано",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.primary
                         )

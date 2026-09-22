@@ -81,6 +81,11 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /**
+     * Favorites are never pruned against the library. With the permission revoked the library
+     * reads empty and with a partial grant it reads partial, so removing keys whose file is
+     * "missing" would delete favorites for files that are still there.
+     */
     fun favorite(keys: Set<String>) = viewModelScope.launch {
         store.edit { prefs -> prefs[favoritesKey] = BatchPlan.nextFavorites(prefs[favoritesKey] ?: emptySet(), keys) }
     }
