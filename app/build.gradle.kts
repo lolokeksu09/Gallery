@@ -10,8 +10,8 @@ android {
         applicationId = "com.lolokeksu.gallery"
         minSdk = 33
         targetSdk = 35
-        versionCode = 8
-        versionName = "0.1.7"
+        versionCode = 9
+        versionName = "0.1.8"
         // Russian UI with an English fallback; other bundled translations only grow the APK.
         @Suppress("DEPRECATION")
         resourceConfigurations += setOf("ru", "en")

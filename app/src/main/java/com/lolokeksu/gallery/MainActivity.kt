@@ -115,6 +115,7 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
     val context = LocalContext.current
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     var vaultOpen by rememberSaveable { mutableStateOf(false) }
+    var trashOpen by rememberSaveable { mutableStateOf(false) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
     var album by rememberSaveable { mutableStateOf<String?>(null) }
     var selected by rememberSaveable { mutableStateOf<String?>(null) }
@@ -149,6 +150,28 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
             selectionList = emptyList()
         }
     }
+    // Both trash actions hand the work back to Android, which asks for its own confirmation.
+    val trashRequest = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) {
+        // Whatever the outcome, the listing is stale afterwards.
+        vm.refresh()
+        vm.loadTrash()
+    }
+    fun restoreFromTrash(items: List<GalleryMedia>) {
+        if (items.isEmpty()) return
+        try {
+            val intent = MediaStore.createTrashRequest(context.contentResolver, items.map { it.uri }, false)
+            trashRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
+        } catch (_: Exception) { Toast.makeText(context, "Не удалось восстановить", Toast.LENGTH_SHORT).show() }
+    }
+    fun purgeFromTrash(items: List<GalleryMedia>) {
+        if (items.isEmpty()) return
+        try {
+            val intent = MediaStore.createDeleteRequest(context.contentResolver, items.map { it.uri })
+            trashRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
+        } catch (_: Exception) { Toast.makeText(context, "Не удалось удалить", Toast.LENGTH_SHORT).show() }
+    }
+    LaunchedEffect(trashOpen) { if (trashOpen) vm.loadTrash() else vm.clearTrashList() }
+
     // The vault locks itself whenever the application leaves the foreground, which also wipes
     // every decrypted copy from the cache.
     val hideRequest = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { result ->
@@ -259,6 +282,7 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         GalleryHome(state, vm, tab, album, visible, onTab = { tab = it; album = null; selectionList = emptyList() },
             onAlbum = { album = it; selectionList = emptyList() },
             onOpen = { selected = it }, onAccess = { access() }, onVault = { vaultOpen = true },
+            onTrash = { trashOpen = true },
             selection = selection,
             onToggle = { media ->
                 selectionList = if (media.key in selection) selectionList - media.key else selectionList + media.key
@@ -287,6 +311,18 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
                         onHide = if (vault.unlocked) ({ media -> vaultVm.hide(listOf(media)) }) else null)
                 }
             }
+        }
+        AnimatedVisibility(
+            visible = trashOpen,
+            enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
+            exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.94f, animationSpec = tween(180))
+        ) {
+            TrashScreen(
+                items = state.trash, loading = state.trashLoading, vm = vm,
+                onClose = { trashOpen = false },
+                onRestore = { restoreFromTrash(it) },
+                onDeleteForever = { purgeFromTrash(it) }
+            )
         }
         AnimatedVisibility(
             visible = vaultOpen,
@@ -337,7 +373,7 @@ private data class ViewerRequest(
 private fun GalleryHome(
     state: GalleryState, vm: GalleryViewModel, tab: Int, album: String?, visible: List<GalleryMedia>,
     onTab: (Int) -> Unit, onAlbum: (String?) -> Unit, onOpen: (String) -> Unit, onAccess: () -> Unit,
-    onVault: () -> Unit,
+    onVault: () -> Unit, onTrash: () -> Unit,
     selection: Set<String>, onToggle: (GalleryMedia) -> Unit, onClearSelection: () -> Unit,
     onSelectionShare: () -> Unit, onSelectionTrash: () -> Unit, onSelectionFavorite: () -> Unit,
     onSelectionHide: (() -> Unit)?
@@ -449,7 +485,7 @@ private fun GalleryHome(
                 else mediaFor(state, currentTab, currentAlbum)
             Column(Modifier.fillMaxSize().padding(padding)) {
                 when {
-                    currentTab == 3 -> SettingsPage(state, vm, onAccess)
+                    currentTab == 3 -> SettingsPage(state, vm, onAccess, onTrash)
                     state.loading -> Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
                     state.error != null -> EmptyPage("Не удалось загрузить", state.error!!, "Повторить", vm::refresh)
                     !state.canRead -> EmptyPage("Фото и видео", "Разреши доступ, чтобы увидеть фотографии и видео на телефоне.", "Разрешить доступ", onAccess)
@@ -589,7 +625,7 @@ private fun PhotoGrid(
 }
 
 @Composable
-private fun Thumbnail(
+internal fun Thumbnail(
     media: GalleryMedia, favorite: Boolean, modifier: Modifier,
     vm: GalleryViewModel? = null, selected: Boolean = false
 ) {
@@ -637,7 +673,9 @@ private fun EmptyPage(title: String, subtitle: String, action: String, onAction:
 }
 
 @Composable
-private fun SettingsPage(state: GalleryState, vm: GalleryViewModel, onAccess: () -> Unit) {
+private fun SettingsPage(
+    state: GalleryState, vm: GalleryViewModel, onAccess: () -> Unit, onTrash: () -> Unit
+) {
     val palette = LocalGalleryPalette.current
     val context = LocalContext.current
     val photos = state.media.count { !it.video }
@@ -675,6 +713,17 @@ private fun SettingsPage(state: GalleryState, vm: GalleryViewModel, onAccess: ()
                     ChoiceRow(order.label, state.sort == order) { vm.sort(order) }
                 }
             }
+        }
+        SettingsCard("Файлы", rememberVectorPainter(Icons.Default.Delete)) {
+            Text(
+                "Удалённое уходит в корзину Android и хранится там 30 дней. Это та же корзина, " +
+                    "что в «Файлах» и системной галерее, а не отдельная копия внутри приложения.",
+                style = MaterialTheme.typography.bodySmall, color = palette.muted
+            )
+            ActionRow(
+                rememberVectorPainter(Icons.Default.Delete), "Корзина",
+                "Восстановить или стереть окончательно", onTrash
+            )
         }
         SettingsCard("Доступ к медиа", rememberVectorPainter(Icons.Default.Lock)) {
             AccessStatus(state)

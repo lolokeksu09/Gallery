@@ -1,11 +1,13 @@
 package com.lolokeksu.gallery
 
 import android.Manifest
+import android.content.ContentResolver
 import android.content.ContentUris
 import android.content.Context
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.Bundle
 import android.graphics.Bitmap
 import android.provider.MediaStore
 import android.util.Size
@@ -87,7 +89,22 @@ class MediaRepository(private val context: Context) {
         result.sortedByDescending { it.date }
     }
 
-    private fun query(video: Boolean): List<GalleryMedia> {
+    /**
+     * What Android is holding in its trash. Deleting from the gallery uses createTrashRequest, so
+     * a file stays recoverable for thirty days, and this is how it gets listed again.
+     *
+     * Android may hide trashed items belonging to another application, in which case this comes
+     * back empty even right after a deletion. The screen says so rather than claiming the trash
+     * is empty.
+     */
+    suspend fun trashed(): List<GalleryMedia> = withContext(Dispatchers.IO) {
+        val result = mutableListOf<GalleryMedia>()
+        if (photos()) result += query(false, trashed = true)
+        if (videos()) result += query(true, trashed = true)
+        result.sortedByDescending { it.date }
+    }
+
+    private fun query(video: Boolean, trashed: Boolean = false): List<GalleryMedia> {
         val collection = if (video) MediaStore.Video.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
             else MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL)
         val projection = mutableListOf("_id", "_display_name", "bucket_display_name", "bucket_id",
@@ -97,10 +114,19 @@ class MediaRepository(private val context: Context) {
         // Bound arguments rather than an interpolated list: MediaStore rejects selections it
         // cannot parse, and the types never reach the SQL text.
         val types = MediaTypes.of(video)
-        val selection = "is_pending = 0 AND is_trashed = 0 AND mime_type IN (" +
-            types.joinToString(",") { "?" } + ")"
-        context.contentResolver.query(collection, projection.toTypedArray(),
-            selection, types.toTypedArray(), "date_added DESC")?.use { c ->
+        // is_trashed stays out of the selection: MediaStore filters trashed rows itself through
+        // QUERY_ARG_MATCH_TRASHED, and a selection on that column does not decide it.
+        val selection = "is_pending = 0 AND mime_type IN (" + types.joinToString(",") { "?" } + ")"
+        val args = Bundle().apply {
+            putString(ContentResolver.QUERY_ARG_SQL_SELECTION, selection)
+            putStringArray(ContentResolver.QUERY_ARG_SQL_SELECTION_ARGS, types.toTypedArray())
+            putString(ContentResolver.QUERY_ARG_SQL_SORT_ORDER, "date_added DESC")
+            putInt(
+                MediaStore.QUERY_ARG_MATCH_TRASHED,
+                if (trashed) MediaStore.MATCH_ONLY else MediaStore.MATCH_EXCLUDE
+            )
+        }
+        context.contentResolver.query(collection, projection.toTypedArray(), args, null)?.use { c ->
             fun s(name: String) = c.getString(c.getColumnIndexOrThrow(name)) ?: ""
             fun n(name: String) = c.getLong(c.getColumnIndexOrThrow(name))
             while (c.moveToNext()) {

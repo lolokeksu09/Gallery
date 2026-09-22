@@ -20,7 +20,9 @@ data class GalleryState(
     val media: List<GalleryMedia> = emptyList(), val favorites: Set<String> = emptySet(),
     val columns: Int = 3, val sort: SortOrder = SortOrder.NEWEST, val theme: String = "amethyst",
     val loading: Boolean = true, val error: String? = null, val canRead: Boolean = false,
-    val partial: Boolean = false
+    val partial: Boolean = false,
+    /** Android's trash, loaded only while that screen is open. */
+    val trash: List<GalleryMedia> = emptyList(), val trashLoading: Boolean = false
 )
 
 class GalleryViewModel(app: Application) : AndroidViewModel(app) {
@@ -100,6 +102,20 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         }
         return bitmap
     }
+
+    fun loadTrash() = viewModelScope.launch {
+        mutable.update { it.copy(trashLoading = true) }
+        val items = try {
+            repository.trashed()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (_: Exception) {
+            emptyList()
+        }
+        mutable.update { it.copy(trash = items, trashLoading = false) }
+    }
+
+    fun clearTrashList() = mutable.update { it.copy(trash = emptyList(), trashLoading = false) }
 
     fun columns(count: Int) = viewModelScope.launch { store.edit { it[columnsKey] = count.coerceIn(2, 5) } }
     fun sort(order: SortOrder) = viewModelScope.launch { store.edit { it[sortKey] = order.name } }

@@ -4,6 +4,29 @@ Version-to-version history of the Gallery application. Every version bump adds a
 Sizes and hashes come from the CI build that produced that version; where a build was not measured,
 this file says so instead of guessing.
 
+## 0.1.8 — versionCode 9
+
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35691402664 (commit 21a3341).
+APK 11,455,570 bytes, SHA256 01d0bdfac947aca5ca46bab26434a18cc3cf09e2c9d7624374a7816ef1b50c8d.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+That is 65,536 bytes more than 0.1.7 — the trash screen and the repository query behind it.
+Not run on a device.
+
+Added
+- A trash screen, in Settings under "Файлы". 0.1.6 changed deletion to createTrashRequest, so files
+  became recoverable for thirty days, but nothing in the application listed them: the trash was
+  Android's and only reachable from the Files app or the system gallery. Now it is listed here.
+- Tap to select, "Все" to take everything, then restore or erase permanently. Both hand the work
+  back to Android, which asks for its own confirmation; erasing asks once more first, because that
+  one cannot be undone.
+- The listing is loaded only while the screen is open and dropped when it closes.
+
+Known limitation, stated in the empty state
+- Android may withhold trashed items that belong to another application, and an empty result looks
+  identical to an empty trash from inside the app. The empty state says so and points at the Files
+  app rather than claiming the trash is empty. Whether this device shows other apps' trashed files
+  is not settled by the Android documentation; it can only be answered by looking.
+
 ## 0.1.7 — versionCode 8
 
 Build: https://github.com/lolokeksu09/Gallery/actions/runs/35689518604 (commit fa85094).
