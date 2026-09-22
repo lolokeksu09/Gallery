@@ -1,6 +1,6 @@
 # Progress
 
-## 0.1.6 privacy, trash, thumbnails and multi-select (pending CI)
+## 0.1.6 privacy, trash, thumbnails and multi-select (built green, audited, not device-tested)
 - FLAG_SECURE while the vault is open or unlocked; the unlocked vault no longer reaches the recents
   snapshot. Wrong-password count persisted, so a force stop no longer bypasses the lockout.
 - Gallery deletions go to the system trash; the vault import still really deletes the original,
@@ -9,7 +9,13 @@
 - Video tiles read MediaStore thumbnails instead of decoding frames. Coil's disk cache was checked
   first and rejected: it only serves network sources, so it would have been a no-op here.
 - Multi-select with batch share, favorite, hide and delete. One system dialog per batch.
-- Verified for steps 1-3: build 35523814609 green on aed09f4. Step 4 pending CI.
+- Verified: build 35532400821 green on 03b1367. APK 11,390,034 bytes, SHA256
+  94da1205999462e11d5818f70fac88b013967c1f82b2a81c174e1d2f0943cb0f. That is 1,131,257 bytes more
+  than 0.1.3; the growth is the new code, not a packaging regression.
+- A second audit of the batch work found six problems, all fixed and rebuilt green. The worst was
+  introduced by this release: pruning favorites was guarded only against limited access, but with
+  the permission revoked the library reads empty and every favorite would have been deleted.
+  Pruning is gone; the count in settings is taken against the library instead.
 - Not verified: nothing in 0.1.6 has run on a device.
 
 ## Next

@@ -6,7 +6,13 @@ this file says so instead of guessing.
 
 ## 0.1.6 — versionCode 7
 
-Not built yet; this entry is completed once CI reports the size and hash.
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35532400821 (commit 03b1367).
+APK 11,390,034 bytes, SHA256 94da1205999462e11d5818f70fac88b013967c1f82b2a81c174e1d2f0943cb0f.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+
+That is 1,131,257 bytes more than 0.1.3, the last release measured. The growth is the vault, the
+theme system and multi-select, not a packaging regression: nothing about shrinking changed between
+the two. Nothing in 0.1.6 has run on a device.
 
 Added
 - Multi-select in the photo grid. A long press starts it, a tap extends it, back leaves it. The top
