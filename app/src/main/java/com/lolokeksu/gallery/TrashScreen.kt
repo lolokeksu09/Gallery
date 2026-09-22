@@ -45,10 +45,12 @@ fun TrashScreen(
     var confirmPurge by remember { mutableStateOf(false) }
     val chosen = remember(items, selection) { items.filter { it.key in selection } }
 
-    BackHandler { if (selection.isNotEmpty()) selection = emptySet() else onClose() }
+    // Dropping a selection is a step inside the screen, so it stays an ordinary back press.
+    BackHandler(selection.isNotEmpty()) { selection = emptySet() }
+    val back = predictiveBackProgress(selection.isEmpty(), onBack = onClose)
 
     Box(
-        Modifier.fillMaxSize().background(palette.backdrop)
+        Modifier.fillMaxSize().background(palette.backdrop).predictiveBack(back)
             .pointerInput(Unit) { detectTapGestures { } }
     ) {
         Scaffold(

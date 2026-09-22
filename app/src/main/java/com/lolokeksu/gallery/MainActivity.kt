@@ -47,12 +47,14 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.painter.Painter
 import androidx.compose.ui.graphics.vector.rememberVectorPainter
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerInputScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
@@ -108,6 +110,7 @@ private fun mediaFor(state: GalleryState, tab: Int, album: String?): List<Galler
     }
 }
 
+@OptIn(ExperimentalSharedTransitionApi::class)
 @Composable
 fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = viewModel()) {
     val state by vm.state.collectAsStateWithLifecycle()
@@ -252,6 +255,13 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         viewer = held.copy(media = visible)
     }
 
+    // Which photograph the viewer is showing right now, which is not the same as the one it was
+    // opened on. Kept out of openKey on purpose: the block above rebuilds ViewerRequest when
+    // that changes, which would remount the pager mid-swipe. This only decides which tile
+    // steps aside for the transform.
+    var viewerPage by remember { mutableStateOf<String?>(null) }
+    LaunchedEffect(openKey) { if (openKey == null) viewerPage = null }
+
     val chosen = remember(visible, selection) { visible.filter { it.key in selection } }
     fun trashChosen() {
         if (chosen.isEmpty()) return
@@ -280,77 +290,83 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         } catch (_: Exception) { Toast.makeText(context, "Не удалось отправить файлы", Toast.LENGTH_SHORT).show() }
     }
 
-    Box(Modifier.fillMaxSize().background(palette.backdrop)) {
-        GalleryHome(state, vm, tab, album, visible, onTab = { tab = it; album = null; selectionList = emptyList() },
-            onAlbum = { album = it; selectionList = emptyList() },
-            onOpen = { selected = it }, onAccess = { access() }, onVault = { vaultOpen = true },
-            onTrash = { trashOpen = true },
-            selection = selection,
-            onToggle = { media ->
-                selectionList = if (media.key in selection) selectionList - media.key else selectionList + media.key
-            },
-            onClearSelection = { selectionList = emptyList() },
-            onSelectionShare = { shareChosen() },
-            onSelectionTrash = { trashChosen() },
-            onSelectionFavorite = { vm.favorite(chosen); selectionList = emptyList() },
-            onSelectionHide = if (vault.unlocked) ({ vaultVm.hide(chosen) }) else null)
-        AnimatedVisibility(
-            visible = openKey != null,
-            enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
-            exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.94f, animationSpec = tween(180))
-        ) {
-            viewer?.let { request ->
-                key(request.session) {
-                    MediaViewer(request.media, request.key, isFavorite = { state.isFavorite(it) },
-                        onClose = { selected = null }, onFavorite = vm::favorite,
-                        onDelete = { media ->
-                            try {
-                                // The system trash keeps the file recoverable for 30 days, unlike
-                                // createDeleteRequest which erases it outright.
-                                val intent = MediaStore.createTrashRequest(context.contentResolver, listOf(media.uri), true)
-                                deleteRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
-                            } catch (_: Exception) { Toast.makeText(context, "Не удалось запросить удаление", Toast.LENGTH_SHORT).show() }
-                        },
-                        onHide = if (vault.unlocked) ({ media -> vaultVm.hide(listOf(media)) }) else null)
+    SharedTransitionLayout {
+        CompositionLocalProvider(LocalSharedTransition provides this) {
+            Box(Modifier.fillMaxSize().background(palette.backdrop)) {
+                GalleryHome(state, vm, tab, album, visible, viewerPage,
+                    onTab = { tab = it; album = null; selectionList = emptyList() },
+                    onAlbum = { album = it; selectionList = emptyList() },
+                    onOpen = { selected = it }, onAccess = { access() }, onVault = { vaultOpen = true },
+                    onTrash = { trashOpen = true },
+                    selection = selection,
+                    onToggle = { media ->
+                        selectionList = if (media.key in selection) selectionList - media.key else selectionList + media.key
+                    },
+                    onClearSelection = { selectionList = emptyList() },
+                    onSelectionShare = { shareChosen() },
+                    onSelectionTrash = { trashChosen() },
+                    onSelectionFavorite = { vm.favorite(chosen); selectionList = emptyList() },
+                    onSelectionHide = if (vault.unlocked) ({ vaultVm.hide(chosen) }) else null)
+                AnimatedVisibility(
+                    visible = openKey != null,
+                    enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
+                    exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.94f, animationSpec = tween(180))
+                ) {
+                    viewer?.let { request ->
+                        key(request.session) {
+                            MediaViewer(request.media, request.key, isFavorite = { state.isFavorite(it) },
+                                animatedScope = this@AnimatedVisibility, onPage = { viewerPage = it },
+                                onClose = { selected = null }, onFavorite = vm::favorite,
+                                onDelete = { media ->
+                                    try {
+                                        // The system trash keeps the file recoverable for 30 days, unlike
+                                        // createDeleteRequest which erases it outright.
+                                        val intent = MediaStore.createTrashRequest(context.contentResolver, listOf(media.uri), true)
+                                        deleteRequest.launch(IntentSenderRequest.Builder(intent.intentSender).build())
+                                    } catch (_: Exception) { Toast.makeText(context, "Не удалось запросить удаление", Toast.LENGTH_SHORT).show() }
+                                },
+                                onHide = if (vault.unlocked) ({ media -> vaultVm.hide(listOf(media)) }) else null)
+                        }
+                    }
                 }
-            }
-        }
-        AnimatedVisibility(
-            visible = trashOpen,
-            enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
-            exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.94f, animationSpec = tween(180))
-        ) {
-            TrashScreen(
-                items = state.trash, loading = state.trashLoading, vm = vm,
-                onClose = { trashOpen = false },
-                onRestore = { restoreFromTrash(it) },
-                onDeleteForever = { purgeFromTrash(it) }
-            )
-        }
-        AnimatedVisibility(
-            visible = vaultOpen,
-            enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
-            exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.94f, animationSpec = tween(180))
-        ) {
-            VaultScreen(vaultVm) { vaultOpen = false }
-        }
-        // Hiding a file starts from the gallery viewer with the vault closed, so its progress and
-        // its failures have to be shown here rather than inside the vault screen.
-        vault.busy?.let { busy ->
-            Box(
-                Modifier.fillMaxSize().background(Color.Black.copy(alpha = .72f))
-                    // A scrim that does not take the taps is not a scrim: without this the grid
-                    // and the selection bar stay live while the files are being encrypted.
-                    .pointerInput(Unit) { detectTapGestures { } },
-                contentAlignment = Alignment.Center
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    CircularProgressIndicator()
-                    // Hiding a file uses an empty label on purpose, so nothing on screen names
-                    // the vault while the encryption runs.
-                    if (busy.isNotEmpty()) {
-                        Spacer(Modifier.height(16.dp))
-                        Text(busy, color = Color.White)
+                AnimatedVisibility(
+                    visible = trashOpen,
+                    enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
+                    exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.94f, animationSpec = tween(180))
+                ) {
+                    TrashScreen(
+                        items = state.trash, loading = state.trashLoading, vm = vm,
+                        onClose = { trashOpen = false },
+                        onRestore = { restoreFromTrash(it) },
+                        onDeleteForever = { purgeFromTrash(it) }
+                    )
+                }
+                AnimatedVisibility(
+                    visible = vaultOpen,
+                    enter = fadeIn(tween(220)) + scaleIn(initialScale = 0.94f, animationSpec = tween(220)),
+                    exit = fadeOut(tween(180)) + scaleOut(targetScale = 0.94f, animationSpec = tween(180))
+                ) {
+                    VaultScreen(vaultVm) { vaultOpen = false }
+                }
+                // Hiding a file starts from the gallery viewer with the vault closed, so its progress and
+                // its failures have to be shown here rather than inside the vault screen.
+                vault.busy?.let { busy ->
+                    Box(
+                        Modifier.fillMaxSize().background(Color.Black.copy(alpha = .72f))
+                            // A scrim that does not take the taps is not a scrim: without this the grid
+                            // and the selection bar stay live while the files are being encrypted.
+                            .pointerInput(Unit) { detectTapGestures { } },
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            CircularProgressIndicator()
+                            // Hiding a file uses an empty label on purpose, so nothing on screen names
+                            // the vault while the encryption runs.
+                            if (busy.isNotEmpty()) {
+                                Spacer(Modifier.height(16.dp))
+                                Text(busy, color = Color.White)
+                            }
+                        }
                     }
                 }
             }
@@ -375,6 +391,7 @@ private data class ViewerRequest(
 @Composable
 private fun GalleryHome(
     state: GalleryState, vm: GalleryViewModel, tab: Int, album: String?, visible: List<GalleryMedia>,
+    viewerPage: String?,
     onTab: (Int) -> Unit, onAlbum: (String?) -> Unit, onOpen: (String) -> Unit, onAccess: () -> Unit,
     onVault: () -> Unit, onTrash: () -> Unit,
     selection: Set<String>, onToggle: (GalleryMedia) -> Unit, onClearSelection: () -> Unit,
@@ -498,7 +515,7 @@ private fun GalleryHome(
                             "Обновить", vm::refresh)
                         else if (currentTab == 1 && currentAlbum == null) AlbumGrid(items, vm, onAlbum)
                         else PhotoGrid(
-                            items, state, vm, selection, onToggle,
+                            items, state, vm, selection, onToggle, viewerPage,
                             onColumns = vm::columns, onOpen = { onOpen(it.key) }
                         )
                     }
@@ -620,7 +637,7 @@ private suspend fun PointerInputScope.detectGridPinch(onStep: (Int) -> Unit) {
 @Composable
 private fun PhotoGrid(
     media: List<GalleryMedia>, state: GalleryState, vm: GalleryViewModel,
-    selection: Set<String>, onToggle: (GalleryMedia) -> Unit,
+    selection: Set<String>, onToggle: (GalleryMedia) -> Unit, viewerPage: String?,
     onColumns: (Int) -> Unit, onOpen: (GalleryMedia) -> Unit
 ) {
     val palette = LocalGalleryPalette.current
@@ -638,13 +655,39 @@ private fun PhotoGrid(
     val gap by animateDpAsState(gridGap(columns.intValue).dp, motion, label = "gap")
     val corner by animateDpAsState((gridGap(columns.intValue) + 4).dp, motion, label = "corner")
     val applyColumns by rememberUpdatedState(onColumns)
+    val haptics = LocalHapticFeedback.current
+    val gridState = rememberLazyGridState()
+    // Every key in the grid says which day it belongs to: headers are "date:", tiles are their
+    // own media key. That is enough to name the position without a second list.
+    val dateOfKey = remember(groups) {
+        buildMap {
+            groups.forEach { (date, items) ->
+                put("date:$date", date)
+                items.forEach { put(it.key, date) }
+            }
+        }
+    }
+    // LazyVerticalGrid has no sticky headers — foundation only has them for lists — so the date
+    // of the current position rides above the grid while it moves and fades once it settles.
+    val scrolling = gridState.isScrollInProgress
+    var dateVisible by remember { mutableStateOf(false) }
+    LaunchedEffect(scrolling) {
+        if (scrolling) dateVisible = true else { delay(800); dateVisible = false }
+    }
+    val currentDate by remember(dateOfKey) {
+        derivedStateOf { gridState.layoutInfo.visibleItemsInfo.firstOrNull()?.key?.let(dateOfKey::get) }
+    }
     Box(Modifier.fillMaxSize().background(palette.backdrop).pointerInput(Unit) {
         detectGridPinch { step ->
             val next = (columns.intValue + step).coerceIn(MIN_COLUMNS, MAX_COLUMNS)
-            if (next != columns.intValue) { columns.intValue = next; applyColumns(next); hint = true }
+            if (next != columns.intValue) {
+                columns.intValue = next; applyColumns(next); hint = true
+                haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove)
+            }
         }
     }) {
         LazyVerticalGrid(
+            state = gridState,
             columns = GridCells.Fixed(columns.intValue),
             horizontalArrangement = Arrangement.spacedBy(gap),
             verticalArrangement = Arrangement.spacedBy(gap),
@@ -662,16 +705,31 @@ private fun PhotoGrid(
                 items(items, key = { it.key }) { media ->
                     Thumbnail(
                         media, state.isFavorite(media),
-                        Modifier.animateItem().aspectRatio(1f).clip(RoundedCornerShape(corner))
+                        Modifier.animateItem().aspectRatio(1f)
+                            .sharedTile(media.key, hidden = media.key == viewerPage)
+                            .clip(RoundedCornerShape(corner))
                             .combinedClickable(
                                 // Outside selection a tap opens; inside it toggles. A long press
                                 // always starts or extends the selection.
                                 onClick = { if (selection.isEmpty()) onOpen(media) else onToggle(media) },
-                                onLongClick = { onToggle(media) }
+                                onLongClick = {
+                                    // The press that starts a selection should be felt, not just seen.
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    onToggle(media)
+                                }
                             ),
                         vm, selected = media.key in selection)
                 }
             }
+        }
+        // The density hint wins the spot while it is up: both are the same pill and stacking them
+        // would put one on top of the other.
+        AnimatedVisibility(dateVisible && !hint && currentDate != null,
+            enter = fadeIn(tween(160)), exit = fadeOut(tween(260)),
+            modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)) {
+            Text(currentDate.orEmpty(),
+                Modifier.clip(CircleShape).background(palette.elevated).padding(horizontal = 16.dp, vertical = 8.dp),
+                style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         }
         AnimatedVisibility(hint, enter = fadeIn(), exit = fadeOut(), modifier = Modifier.align(Alignment.TopCenter).padding(top = 12.dp)) {
             Text("${columns.intValue} в ряд",
