@@ -6,7 +6,12 @@ this file says so instead of guessing.
 
 ## 0.1.10 — versionCode 11
 
-Not built yet; this entry is completed once CI reports the size and hash.
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35703348789 (commit 0534e5a).
+APK 11,405,015 bytes, SHA256 8fd684b0b822f80687703cc201f243fb378dc77bc6a7a73a3ddd1037f1d945ef.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+32,772 bytes smaller than 0.1.9: a small composable replaced Material's NavigationBar and
+NavigationBarItem, which carried their own layout and animation code.
+Not run on a device.
 
 Changed
 - The navigation bar is compact. Material's own is 80dp before the gesture inset, and with a label
