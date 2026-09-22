@@ -55,6 +55,23 @@ fun formatDuration(ms: Long): String {
     else "%d:%02d".format(seconds / 60, seconds % 60)
 }
 
+/**
+ * Russian counts the noun after a number in three forms, and the interface said "файлов" for all
+ * of them: "1 файлов", "3 файлов". Eleven to fourteen are the exception that the last digit alone
+ * gets wrong, so the hundreds remainder decides first.
+ */
+fun fileCount(count: Int): String {
+    val hundreds = count % 100
+    val tens = count % 10
+    val noun = when {
+        hundreds in 11..14 -> "файлов"
+        tens == 1 -> "файл"
+        tens in 2..4 -> "файла"
+        else -> "файлов"
+    }
+    return "$count $noun"
+}
+
 class MediaRepository(private val context: Context) {
     fun allowed(permission: String) = context.checkSelfPermission(permission) == PackageManager.PERMISSION_GRANTED
     private fun fullPhotos() = allowed(Manifest.permission.READ_MEDIA_IMAGES)
