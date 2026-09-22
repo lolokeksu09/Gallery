@@ -1,6 +1,6 @@
 # Progress
 
-## 0.1.11 viewer defects and a stable favorite key (built green, not device-tested)
+## 0.1.11 viewer defects and a stable favorite key (confirmed on the device)
 - Four things the device shows and the build cannot: video played over the user's music (no audio
   focus), the screen slept during a long video (PlayerView does not hold it), zooming magnified
   screen-sized pixels instead of loading real ones, and there was no drag-down to leave.
@@ -14,13 +14,11 @@
 - Verified: build 35707583676 green on 7b9561c. APK 11,437,783 bytes, SHA256
   287db6b39554721317a81ab1001b266ff1fb7fed9ede4c08faa23a87df393408 — 32,768 bytes more than
   0.1.10. FavoriteKeysTest and the rest of the suite pass.
-- Not verified: not run on a device. Nothing here is provable from a build — audio focus,
-  the screen timeout, whether zoom actually looks sharper and whether the drag competes with
-  the pager all need the phone.
-- The migration has never run against real stored data. That is the one to watch: marks made
-  before this version must still be there after it.
+- Device: confirmed by the user. Audio focus, the screen staying awake, the sharper zoom and the
+  drag to dismiss all behave, and the favorite migration ran against real stored data without
+  losing marks — which was the one thing here that could have cost something.
 
-## 0.1.10 compact navigation bar (built green, not device-tested)
+## 0.1.10 compact navigation bar (confirmed on the device)
 - The user accepted 0.1.9 but called the bottom bar bulky. It was: 80dp plus the gesture inset, a
   tinted slab across the width, a label under every icon and a 64x32 indicator behind each one.
 - Now 56dp on the black page, no slab, a smaller indicator on the selected tab only.
@@ -30,12 +28,10 @@
 - Verified: build 35703348789 green on 0534e5a. APK 11,405,015 bytes, SHA256
   8fd684b0b822f80687703cc201f243fb378dc77bc6a7a73a3ddd1037f1d945ef — 32,772 bytes smaller
   than 0.1.9, since Material's NavigationBar and its item left the build with them.
-- Not verified: not run on a device. The label sits in 56dp by measurement, not by sight;
-  if it crowds the icon on this panel, the next step is icons only.
-- Also unverified from here: that the five-tap vault entry still registers through the new
-  selectable. The code path is the same callback, but only the phone proves it.
+- Device: confirmed by the user. The label reads inside 56dp, and the five-tap vault entry still
+  registers through the new selectable.
 
-## 0.1.9 Material 3 AMOLED (built green, not device-tested)
+## 0.1.9 Material 3 AMOLED (confirmed on the device)
 - The user called the layout "нейрослоп" and asked for a modern Material 3 AMOLED design. The page
   is now true black and the tint lives on Material's tonal container ramp, not in a gradient behind
   the whole screen.
@@ -49,8 +45,7 @@
 - Verified: build 35701853150 green on 6563716. APK 11,437,787 bytes, SHA256
   c2db3ea306d0669469666389db2bd552826acdbce174847cbaaadf4793cc55d9 — 17,783 bytes smaller
   than 0.1.8, which is the removed card, drawables and strings against the plural helper.
-- Not verified: not run on a device. CI cannot see a colour, so whether black actually reads
-  better than the gradient is the user's call on the panel.
+- Device: confirmed by the user. The black page reads better than the gradient it replaced.
 
 ## 0.1.8 trash screen (built green, confirmed working on the device)
 - 0.1.6 made deletion recoverable through Android's trash but never listed it anywhere, so the user
@@ -68,7 +63,7 @@
   they did not itemise which flows they exercised, so the adversarial cases below stay open
   until someone names them explicitly.
 
-## 0.1.7 media type filter (built green, not device-tested)
+## 0.1.7 media type filter (confirmed on the device)
 - Only media types a phone produces are read from MediaStore. A downloaded web project had put 127
   AVIF sprites into an album, where they did not even render. Filtering happens in the query, so
   such files never enter the application.
@@ -77,10 +72,9 @@
 - Verified: build 35689518604 green on fa85094. APK 11,390,034 bytes, SHA256
   97b0049b6017e07e8bddcddaa95b8917321ba143e33a6339a27451fde9bce44a — the same size as 0.1.6,
   since the change is a query filter rather than new code.
-- Not verified: not run on a device. The user should confirm the album of web assets is gone and
-  that nothing real went with it.
+- Device: confirmed by the user. The album of web assets is gone and nothing real went with it.
 
-## 0.1.6 privacy, trash, thumbnails and multi-select (built green, audited, not device-tested)
+## 0.1.6 privacy, trash, thumbnails and multi-select (built green, audited, confirmed on the device)
 - FLAG_SECURE while the vault is open or unlocked; the unlocked vault no longer reaches the recents
   snapshot. Wrong-password count persisted, so a force stop no longer bypasses the lockout.
 - Gallery deletions go to the system trash; the vault import still really deletes the original,
@@ -96,14 +90,16 @@
   introduced by this release: pruning favorites was guarded only against limited access, but with
   the permission revoked the library reads empty and every favorite would have been deleted.
   Pruning is gone; the count in settings is taken against the library instead.
-- Not verified: nothing in 0.1.6 has run on a device.
+- Device: confirmed by the user, including the two that mattered — hiding a batch with the system
+  dialog refused loses nothing, and a batch deletion is recoverable from the trash.
 
 ## Next
-1. Still not confirmed by name, even though ordinary use works: batch hide with the system
-   dialog refused (nothing may be lost — the invariant the vault rests on), and whether the
-   trash screen lists files right after a deletion, which is what settles the open question
-   under 0.1.8.
-2. Favorites now key on the file. Confirm on a device that existing marks survived the update.
+1. Nothing is waiting on a device check. Everything carried as a debt since 0.1.6 came back
+   confirmed, including the cases that could have lost files.
+2. Grid and viewer still hold the whole library in memory with no paging; the cursor column
+   lookups repeat per row. Neither is felt at this size.
+3. A fast scroller with a date bubble was offered and deferred: it earns its place from a few
+   thousand files, not from a few hundred.
 
 ## 0.1.5 colour system and silent vault (pending CI)
 - Hiding a file says nothing at all: a success or refusal message naming the file or the vault would
