@@ -4,6 +4,30 @@ Version-to-version history of the Gallery application. Every version bump adds a
 Sizes and hashes come from the CI build that produced that version; where a build was not measured,
 this file says so instead of guessing.
 
+## 0.1.13 — versionCode 14
+
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35731982097 (commit efc1817).
+APK 11,552,503 bytes, SHA256 683f922c00fafbacfd34c089c0215d90b34fa5f3ca568f1dfd121108a18536e0.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+Byte for byte the same size as 0.1.12, which is what moving work from run time to construction
+time looks like: the same code, arranged differently.
+Not run on a device.
+
+Nothing here changes what the application looks like or does. It is the debt PROGRESS has been
+carrying, found by reading the code rather than by using it, and at 184 files none of it is
+something anyone would have felt. It is written down because it grows with the library.
+
+Changed
+- Each media key is built once at construction instead of on every read. key and stableKey were
+  both getters that build a string, and every favorite check, grid key and selection test went
+  through them: two allocations per tile per frame while scrolling. Declared in the class body, so
+  neither joins equals, hashCode or copy.
+- Cursor columns are resolved once per query. getColumnIndexOrThrow walks the column names
+  comparing strings, and the read helpers called it for every column of every row — twelve scans
+  per file, over the whole device, on every refresh.
+- The tab leaving the screen no longer filters and sorts the whole library on every frame of the
+  transition; its list is remembered on the same keys the active one uses.
+
 ## 0.1.12 — versionCode 13
 
 Build: https://github.com/lolokeksu09/Gallery/actions/runs/35730482828 (commit 808da9e).

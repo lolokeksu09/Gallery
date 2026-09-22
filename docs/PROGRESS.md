@@ -1,6 +1,24 @@
 # Progress
 
-## 0.1.12 tile transform, predictive back, date while scrolling (built green, not device-tested)
+## 0.1.13 the debt in Next (built green, not device-tested)
+- The user confirmed 0.1.12 and said to carry on without naming anything, so this is the list
+  PROGRESS itself was carrying rather than a new feature.
+- Three things, all found by reading: the media keys were rebuilt on every read, the cursor
+  columns were looked up by name per column per row, and the outgoing tab re-sorted the library
+  on every frame of the tab transition.
+- Honest about the size of it: at 184 files none of this is felt. It is worth doing because each
+  one scales with the library, and none of it changes behaviour.
+- Still open and deliberately untouched: the library is read whole into memory with no paging.
+  That is a real change of shape, not a cleanup, and it should be its own piece of work.
+- Verified: build 35731982097 green on efc1817. APK 11,552,503 bytes, SHA256
+  683f922c00fafbacfd34c089c0215d90b34fa5f3ca568f1dfd121108a18536e0 — byte for byte the size
+  of 0.1.12, which is what moving work from run time to construction time looks like.
+- Not verified: not run on a device, and there is nothing here a device would show. No
+  measurement was taken: the sandbox cannot profile and CI does not either, so the claim is
+  that fewer allocations and fewer string scans happen, not that anything got faster by a
+  number anyone counted.
+
+## 0.1.12 tile transform, predictive back, date while scrolling (confirmed on the device)
 - The user confirmed every outstanding device check and asked for a more modern interface. Three
   of the four things offered were taken; the fast scroller was deferred on size grounds.
 - The transform is the risky one: experimental shared-element APIs, on the most used path in the
@@ -14,8 +32,8 @@
   0.1.11, mostly the shared transition machinery.
 - The first build failed: the opt-in covered the two functions but not the composition local,
   whose own type is the experimental one. The sandbox cannot catch that class of mistake.
-- Not verified: not run on a device. A build says the transform compiles, not that it looks
-  right, and looking right is the entire point of this version.
+- Device: confirmed by the user. The transform looks right and the tiles do not jitter, so
+  animateItem() and the shared element are getting along on this device.
 
 ## 0.1.11 viewer defects and a stable favorite key (confirmed on the device)
 - Four things the device shows and the build cannot: video played over the user's music (no audio
@@ -113,8 +131,9 @@
 ## Next
 1. Nothing is waiting on a device check. Everything carried as a debt since 0.1.6 came back
    confirmed, including the cases that could have lost files.
-2. Grid and viewer still hold the whole library in memory with no paging; the cursor column
-   lookups repeat per row. Neither is felt at this size.
+2. Grid and viewer still hold the whole library in memory with no paging. The cursor column
+   lookups were fixed in 0.1.13; paging was left alone as a change of shape rather than a
+   cleanup.
 3. A fast scroller with a date bubble was offered and deferred: it earns its place from a few
    thousand files, not from a few hundred.
 

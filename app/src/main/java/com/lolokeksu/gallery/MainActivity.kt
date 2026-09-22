@@ -498,9 +498,13 @@ private fun GalleryHome(
             label = "tab"
         ) { (currentTab, currentAlbum) ->
             // The active tab reuses the list the caller already built; only the tab animating
-            // out needs its own.
+            // out needs its own, and that one is remembered too — it was filtering and sorting
+            // the whole library again on every frame of the transition.
             val items = if (currentTab == tab && currentAlbum == album) visible
-                else mediaFor(state, currentTab, currentAlbum)
+                else remember(state.media, state.sort, currentTab, currentAlbum,
+                    if (currentTab == 2) state.favorites to state.legacyFavorites else null) {
+                    mediaFor(state, currentTab, currentAlbum)
+                }
             Column(Modifier.fillMaxSize().padding(padding)) {
                 when {
                     currentTab == 3 -> SettingsPage(state, vm, onAccess, onTrash)
