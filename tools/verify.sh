@@ -72,7 +72,20 @@ else
     [ "$unknown" -eq 0 ] && ok "all icon references exist in material-icons-core" || bad "icon outside material-icons-core"
 fi
 
-# 5. The offline guarantee: no networking permission or library may appear.
+# 5. Cross-file references to the repositories. This codebase has exactly two, both named
+#    `repository` at their call sites, so every `repository.name(` must have a matching
+#    `fun name(` somewhere in the sources. A silent find-and-replace that never landed shows up
+#    here instead of costing a CI round trip.
+missing_ref=0
+for name in $(grep -rho 'repository\.[a-zA-Z_][a-zA-Z0-9_]*(' "$kotlin" 2>/dev/null | sed 's/repository\.//; s/($//; s/(//' | sort -u); do
+    if ! grep -rq "fun $name(" "$kotlin"; then
+        note "repository.$name(...) is called but no 'fun $name(' exists"
+        missing_ref=1
+    fi
+done
+[ "$missing_ref" -eq 0 ] && ok "every repository call resolves to a declared function" || bad "call to a function that does not exist"
+
+# 6. The offline guarantee: no networking permission or library may appear.
 if grep -rn 'android.permission.INTERNET' app/src/main/AndroidManifest.xml | grep -vq 'tools:node="remove"'; then
     bad "INTERNET permission is not marked for removal"
 else

@@ -2,8 +2,10 @@
 
 - This repository is ONLY the Android Gallery, never RiftCore.
 - Read docs/SPEC.md, docs/ARCHITECTURE.md and docs/PROGRESS.md before changes.
-- Kotlin + Compose, Android 13+, AMOLED-dark surfaces. Bars and cards stay near black; the media grid
-  backdrop carries a faint colour tint so photo gaps are not a flat black sheet.
+- Kotlin + Compose, Android 13+. Surfaces are deep but tinted, never flat black: a theme in Theme.kt
+  defines accent, backdrop gradient, chrome, card, border and muted together, and every screen reads
+  them from LocalGalleryPalette rather than hard-coding colours. The user picks the theme in settings.
+  Pure black is reserved for what sits directly behind media and for scrims.
 - Motion matters to the user: tab switches, viewer open/close, zoom and grid density must animate.
   Never introduce an abrupt state jump where a transition is possible.
 - No internet permission, networking libraries, telemetry, accounts, advertising, or background services.
