@@ -161,8 +161,12 @@ class MediaRepository(private val context: Context) {
             )
         }
         context.contentResolver.query(collection, projection.toTypedArray(), args, null)?.use { c ->
-            fun s(name: String) = c.getString(c.getColumnIndexOrThrow(name)) ?: ""
-            fun n(name: String) = c.getLong(c.getColumnIndexOrThrow(name))
+            // Resolved once. getColumnIndexOrThrow walks the column names comparing strings, and
+            // these helpers were calling it for every column of every row: twelve scans per file,
+            // over the whole device.
+            val index = projection.associateWith { c.getColumnIndexOrThrow(it) }
+            fun s(name: String) = c.getString(index.getValue(name)) ?: ""
+            fun n(name: String) = c.getLong(index.getValue(name))
             while (c.moveToNext()) {
                 val volume = s("volume_name").ifBlank { MediaStore.VOLUME_EXTERNAL_PRIMARY }
                 val base = if (video) MediaStore.Video.Media.getContentUri(volume) else MediaStore.Images.Media.getContentUri(volume)
