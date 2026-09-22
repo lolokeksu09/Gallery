@@ -99,8 +99,8 @@ internal fun Context.activity(): Activity? {
 }
 
 @Composable
-fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<String>, onClose: () -> Unit,
-    onFavorite: (String) -> Unit, onDelete: (GalleryMedia) -> Unit, onHide: ((GalleryMedia) -> Unit)? = null) {
+fun MediaViewer(media: List<GalleryMedia>, initialKey: String, isFavorite: (GalleryMedia) -> Boolean, onClose: () -> Unit,
+    onFavorite: (GalleryMedia) -> Unit, onDelete: (GalleryMedia) -> Unit, onHide: ((GalleryMedia) -> Unit)? = null) {
     val context = LocalContext.current
     val view = LocalView.current
     val pager = rememberPagerState(initialPage = media.indexOfFirst { it.key == initialKey }.coerceAtLeast(0), pageCount = { media.size })
@@ -187,7 +187,7 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<St
             Row(Modifier.fillMaxWidth()
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .75f))))
                 .navigationBarsPadding().padding(12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                IconButton(onClick = { onFavorite(current.key) }) { Icon(if (current.key in favorites) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Избранное", tint = MaterialTheme.colorScheme.primary) }
+                IconButton(onClick = { onFavorite(current) }) { Icon(if (isFavorite(current)) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Избранное", tint = MaterialTheme.colorScheme.primary) }
                 IconButton(onClick = {
                     try {
                         val intent = Intent(Intent.ACTION_SEND).apply {

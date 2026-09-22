@@ -99,7 +99,7 @@ class MainActivity : ComponentActivity() {
 /** Tab, album and sort filtering in one place so every screen derives the same list. */
 private fun mediaFor(state: GalleryState, tab: Int, album: String?): List<GalleryMedia> {
     val filtered = state.media.filter {
-        (tab != 2 || it.key in state.favorites) && (album == null || it.albumKey == album)
+        (tab != 2 || state.isFavorite(it)) && (album == null || it.albumKey == album)
     }
     return when (state.sort) {
         SortOrder.NEWEST -> filtered.sortedByDescending { it.date }
@@ -234,7 +234,8 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
     }
     // Favorites only change the list on the favorites tab, so toggling a heart elsewhere
     // does not re-filter and re-sort the whole library.
-    val visible = remember(state.media, state.sort, tab, album, if (tab == 2) state.favorites else null) {
+    val visible = remember(state.media, state.sort, tab, album,
+        if (tab == 2) state.favorites to state.legacyFavorites else null) {
         mediaFor(state, tab, album)
     }
     val openKey = selected?.takeIf { key -> visible.any { it.key == key } }
@@ -291,7 +292,7 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
             onClearSelection = { selectionList = emptyList() },
             onSelectionShare = { shareChosen() },
             onSelectionTrash = { trashChosen() },
-            onSelectionFavorite = { vm.favorite(selection); selectionList = emptyList() },
+            onSelectionFavorite = { vm.favorite(chosen); selectionList = emptyList() },
             onSelectionHide = if (vault.unlocked) ({ vaultVm.hide(chosen) }) else null)
         AnimatedVisibility(
             visible = openKey != null,
@@ -300,7 +301,8 @@ fun GalleryApp(vm: GalleryViewModel = viewModel(), vaultVm: VaultViewModel = vie
         ) {
             viewer?.let { request ->
                 key(request.session) {
-                    MediaViewer(request.media, request.key, state.favorites, onClose = { selected = null }, onFavorite = vm::favorite,
+                    MediaViewer(request.media, request.key, isFavorite = { state.isFavorite(it) },
+                        onClose = { selected = null }, onFavorite = vm::favorite,
                         onDelete = { media ->
                             try {
                                 // The system trash keeps the file recoverable for 30 days, unlike
@@ -659,7 +661,7 @@ private fun PhotoGrid(
                 }
                 items(items, key = { it.key }) { media ->
                     Thumbnail(
-                        media, media.key in state.favorites,
+                        media, state.isFavorite(media),
                         Modifier.animateItem().aspectRatio(1f).clip(RoundedCornerShape(corner))
                             .combinedClickable(
                                 // Outside selection a tap opens; inside it toggles. A long press

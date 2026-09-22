@@ -17,8 +17,19 @@ import kotlinx.coroutines.withContext
 data class GalleryMedia(
     val uri: Uri, val name: String, val album: String, val albumKey: String,
     val date: Long, val size: Long, val width: Int, val height: Int,
-    val path: String, val mime: String, val video: Boolean, val duration: Long
-) { val key: String get() = uri.toString() }
+    val path: String, val mime: String, val video: Boolean, val duration: Long,
+    val volume: String = ""
+) {
+    /** Identity for this session: the row that MediaStore is serving right now. */
+    val key: String get() = uri.toString()
+
+    /**
+     * Identity that outlives a MediaStore rescan. The row id in the content URI is reassigned when
+     * the index is rebuilt, so anything stored against it silently points at nothing, or at a
+     * different photograph. A volume, a relative path and a name are the file itself.
+     */
+    val stableKey: String get() = FavoriteMigration.stableKey(volume, path, name, key)
+}
 
 /**
  * Which media types the gallery shows at all.
@@ -154,7 +165,7 @@ class MediaRepository(private val context: Context) {
                     n("datetaken").takeIf { it > 0 } ?: n("date_added") * 1000,
                     n("_size"), n("width").toInt(), n("height").toInt(), s("relative_path"),
                     s("mime_type").ifBlank { if (video) "video/*" else "image/*" }, video,
-                    if (video) n("duration") else 0)
+                    if (video) n("duration") else 0, volume)
             }
         }
         return result
