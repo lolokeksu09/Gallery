@@ -4,6 +4,34 @@ Version-to-version history of the Gallery application. Every version bump adds a
 Sizes and hashes come from the CI build that produced that version; where a build was not measured,
 this file says so instead of guessing.
 
+## 0.1.12 — versionCode 13
+
+Not built yet; this entry is completed once CI reports the size and hash.
+
+Added
+- The tile grows into the viewer and shrinks back. Opening a photograph used to swap one screen
+  for another behind a cross-fade, which said nothing about where the picture came from. Closing
+  lands on whichever tile the viewer was left on, not the one it was opened from.
+- Predictive back. The manifest had never opted in, so the Android 14 gesture gave no sign of
+  where it led until it was over — not when leaving the application, and not when leaving a screen
+  inside it. The viewer, the trash and the vault now follow the finger and come back if the
+  gesture is released early.
+- The date of the current position rides above the grid while it scrolls and fades once it
+  settles. LazyVerticalGrid has no sticky headers — foundation only has them for lists — so it is
+  drawn over the grid, in the pill the density hint already uses.
+- Haptics on the long press that starts a selection, and a lighter one on each pinch step that
+  changes grid density.
+
+Limits worth naming
+- Video pages do not take part in the transform: a PlayerView inside an AndroidView does not
+  render into the shared overlay.
+- If the matching tile is scrolled out of view there is nowhere to land and the element dissolves.
+  Following the pager with the grid would mean hoisting the grid state out of PhotoGrid, which
+  AnimatedContent recreates per tab.
+- A back press that takes a step inside a screen — dropping a selection, closing an opened file,
+  bringing the viewer chrome back — stays an ordinary back press. A predictive animation there
+  would promise an exit that does not happen.
+
 ## 0.1.11 — versionCode 12
 
 Build: https://github.com/lolokeksu09/Gallery/actions/runs/35707583676 (commit 7b9561c).

@@ -1,5 +1,16 @@
 # Progress
 
+## 0.1.12 tile transform, predictive back, date while scrolling (pending CI)
+- The user confirmed every outstanding device check and asked for a more modern interface. Three
+  of the four things offered were taken; the fast scroller was deferred on size grounds.
+- The transform is the risky one: experimental shared-element APIs, on the most used path in the
+  application. It is isolated in SharedMedia.kt plus one wrapper and two call sites, so it reverts
+  as a single commit if the device disagrees with it.
+- Known: animateItem() on tiles and the shared element both govern placement and can disagree. If
+  tiles jitter while scrolling or while density changes, dropping animateItem() from the tiles is
+  a one-line change.
+- Not verified: not built yet, not run on a device.
+
 ## 0.1.11 viewer defects and a stable favorite key (confirmed on the device)
 - Four things the device shows and the build cannot: video played over the user's music (no audio
   focus), the screen slept during a long video (PlayerView does not hold it), zooming magnified
