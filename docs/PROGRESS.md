@@ -1,6 +1,6 @@
 # Progress
 
-## 0.1.12 tile transform, predictive back, date while scrolling (pending CI)
+## 0.1.12 tile transform, predictive back, date while scrolling (built green, not device-tested)
 - The user confirmed every outstanding device check and asked for a more modern interface. Three
   of the four things offered were taken; the fast scroller was deferred on size grounds.
 - The transform is the risky one: experimental shared-element APIs, on the most used path in the
@@ -9,7 +9,13 @@
 - Known: animateItem() on tiles and the shared element both govern placement and can disagree. If
   tiles jitter while scrolling or while density changes, dropping animateItem() from the tiles is
   a one-line change.
-- Not verified: not built yet, not run on a device.
+- Verified: build 35730482828 green on 808da9e. APK 11,552,503 bytes, SHA256
+  d72c841bbed94734583ebd291afc9771308d835f45ce76bcfb6b624e4ec56b08 — 114,720 bytes more than
+  0.1.11, mostly the shared transition machinery.
+- The first build failed: the opt-in covered the two functions but not the composition local,
+  whose own type is the experimental one. The sandbox cannot catch that class of mistake.
+- Not verified: not run on a device. A build says the transform compiles, not that it looks
+  right, and looking right is the entire point of this version.
 
 ## 0.1.11 viewer defects and a stable favorite key (confirmed on the device)
 - Four things the device shows and the build cannot: video played over the user's music (no audio

@@ -6,7 +6,13 @@ this file says so instead of guessing.
 
 ## 0.1.12 — versionCode 13
 
-Not built yet; this entry is completed once CI reports the size and hash.
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35730482828 (commit 808da9e).
+APK 11,552,503 bytes, SHA256 d72c841bbed94734583ebd291afc9771308d835f45ce76bcfb6b624e4ec56b08.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+114,720 bytes more than 0.1.11 — the shared transition machinery is most of it.
+The first attempt failed to compile: the opt-in covered the two functions but not the composition
+local, whose own type is the experimental one. Fixed at the file level.
+Not run on a device.
 
 Added
 - The tile grows into the viewer and shrinks back. Opening a photograph used to swap one screen
