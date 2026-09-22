@@ -1,5 +1,15 @@
 # Progress
 
+## 0.1.8 trash screen (pending CI)
+- 0.1.6 made deletion recoverable through Android's trash but never listed it anywhere, so the user
+  looked for a trash in the application and did not find one. Settings now has one.
+- Restore and permanent erase both go back to the platform, which confirms them itself.
+- Open question that the Android documentation does not settle: whether an application can list
+  trashed items it does not own. If it cannot, the screen will look empty right after a deletion;
+  its empty state says exactly that instead of claiming the trash is empty. Only the device answers
+  this.
+- Not verified: not run on a device.
+
 ## 0.1.7 media type filter (built green, not device-tested)
 - Only media types a phone produces are read from MediaStore. A downloaded web project had put 127
   AVIF sprites into an album, where they did not even render. Filtering happens in the query, so
