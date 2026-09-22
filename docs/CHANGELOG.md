@@ -6,7 +6,11 @@ this file says so instead of guessing.
 
 ## 0.1.7 — versionCode 8
 
-Not built yet; this entry is completed once CI reports the size and hash.
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35689518604 (commit fa85094).
+APK 11,390,034 bytes, SHA256 97b0049b6017e07e8bddcddaa95b8917321ba143e33a6339a27451fde9bce44a.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+Byte for byte the same size as 0.1.6: the change is a query filter, not new code paths.
+Not run on a device.
 
 Changed
 - The gallery only shows media types a phone actually produces. MediaStore indexes every image and
