@@ -10,7 +10,10 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -19,6 +22,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
@@ -39,6 +43,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
@@ -61,6 +66,7 @@ import coil3.size.Size
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.text.DateFormat
+import kotlin.math.abs
 import java.util.Date
 
 /** Controls stay on screen this long before the video goes edge-to-edge full screen. */
@@ -68,6 +74,9 @@ private const val VIDEO_CHROME_TIMEOUT_MS = 5000
 private const val ZOOM_ANIMATION_MS = 260
 private const val MAX_ZOOM = 5f
 private const val DOUBLE_TAP_ZOOM = 2.5f
+
+/** How far a downward drag has to travel before letting go closes the viewer. */
+private val DISMISS_DISTANCE = 110.dp
 
 /**
  * Longest side of the detail layer requested once a photograph is zoomed. A full
@@ -108,13 +117,57 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<St
     }
     DisposableEffect(insets) { onDispose { insets?.show(WindowInsetsCompat.Type.systemBars()) } }
     BackHandler { if (!chrome) chrome = true else onClose() }
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        HorizontalPager(state = pager, key = { media[it].key }, userScrollEnabled = !zoomed, modifier = Modifier.fillMaxSize()) { index ->
-            val item = media[index]
-            if (item.video && index == pager.currentPage) VideoPlayer(item, chrome) { chrome = it }
-            else ZoomableImage(item, onZoom = { if (index == pager.currentPage) zoomed = it }, onTap = { chrome = !chrome })
+
+    // Drag down to leave. Only on photographs: a PlayerView inside an AndroidView takes touches
+    // for itself, and intercepting them on the initial pass would break the playback controls.
+    val scope = rememberCoroutineScope()
+    val drag = remember { Animatable(0f) }
+    var viewerHeight by remember { mutableIntStateOf(0) }
+    val dismissDistance = with(LocalDensity.current) { DISMISS_DISTANCE.toPx() }
+    val dragging = if (viewerHeight > 0) (abs(drag.value) / viewerHeight).coerceIn(0f, 1f) else 0f
+    val canDismiss = !zoomed && !current.video
+    LaunchedEffect(canDismiss) { if (!canDismiss && drag.value != 0f) drag.snapTo(0f) }
+
+    Box(
+        Modifier.fillMaxSize()
+            .onSizeChanged { viewerHeight = it.height }
+            // The page behind the media thins out as the media travels, so the drag reads as
+            // leaving rather than as the photograph sliding off on its own.
+            .background(Color.Black.copy(alpha = 1f - dragging * .8f))
+    ) {
+        Box(
+            Modifier.fillMaxSize()
+                .graphicsLayer {
+                    translationY = drag.value
+                    val shrink = 1f - dragging * .18f
+                    scaleX = shrink
+                    scaleY = shrink
+                }
+                .then(
+                    if (canDismiss) Modifier.pointerInput(current.key) {
+                        detectVerticalDragGestures(
+                            onDragEnd = {
+                                scope.launch {
+                                    if (drag.value > dismissDistance) onClose()
+                                    else drag.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                                }
+                            },
+                            onDragCancel = { scope.launch { drag.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) } }
+                        ) { change, delta ->
+                            change.consume()
+                            // Downward only; dragging up should not peel the viewer off the top.
+                            scope.launch { drag.snapTo((drag.value + delta).coerceAtLeast(0f)) }
+                        }
+                    } else Modifier
+                )
+        ) {
+            HorizontalPager(state = pager, key = { media[it].key }, userScrollEnabled = !zoomed, modifier = Modifier.fillMaxSize()) { index ->
+                val item = media[index]
+                if (item.video && index == pager.currentPage) VideoPlayer(item, chrome) { chrome = it }
+                else ZoomableImage(item, onZoom = { if (index == pager.currentPage) zoomed = it }, onTap = { chrome = !chrome })
+            }
         }
-        AnimatedVisibility(chrome,
+        AnimatedVisibility(chrome && dragging == 0f,
             enter = fadeIn(tween(200)) + slideInVertically(tween(240)) { -it / 3 },
             exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { -it / 3 },
             modifier = Modifier.align(Alignment.TopCenter)) {
@@ -127,7 +180,7 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<St
                 IconButton(onClick = { details = true }) { Icon(Icons.Default.Info, "Сведения", tint = Color.White) }
             }
         }
-        AnimatedVisibility(chrome,
+        AnimatedVisibility(chrome && dragging == 0f,
             enter = fadeIn(tween(200)) + slideInVertically(tween(240)) { it / 3 },
             exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 3 },
             modifier = Modifier.align(Alignment.BottomCenter)) {
