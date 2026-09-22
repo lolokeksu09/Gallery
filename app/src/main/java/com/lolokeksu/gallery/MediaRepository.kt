@@ -20,15 +20,21 @@ data class GalleryMedia(
     val path: String, val mime: String, val video: Boolean, val duration: Long,
     val volume: String = ""
 ) {
-    /** Identity for this session: the row that MediaStore is serving right now. */
-    val key: String get() = uri.toString()
+    /**
+     * Identity for this session: the row that MediaStore is serving right now.
+     *
+     * Computed once rather than on every read. Both of these were getters, and both build a
+     * string, so every favorite check and every grid key allocated one — twice per tile per
+     * frame while scrolling. Declared in the body, so neither joins equals, hashCode or copy.
+     */
+    val key: String = uri.toString()
 
     /**
      * Identity that outlives a MediaStore rescan. The row id in the content URI is reassigned when
      * the index is rebuilt, so anything stored against it silently points at nothing, or at a
      * different photograph. A volume, a relative path and a name are the file itself.
      */
-    val stableKey: String get() = FavoriteMigration.stableKey(volume, path, name, key)
+    val stableKey: String = FavoriteMigration.stableKey(volume, path, name, key)
 }
 
 /**
