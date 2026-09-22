@@ -1,6 +1,6 @@
 # Progress
 
-## 0.1.9 Material 3 AMOLED (pending CI)
+## 0.1.9 Material 3 AMOLED (built green, not device-tested)
 - The user called the layout "нейрослоп" and asked for a modern Material 3 AMOLED design. The page
   is now true black and the tint lives on Material's tonal container ramp, not in a gradient behind
   the whole screen.
@@ -11,7 +11,11 @@
   under every control are gone. File counts left the screen titles and the date headers.
 - Russian plurals fixed through fileCount(), which FormattingTest covers including the
   eleven-to-fourteen exception.
-- Not verified: not built yet, not run on a device.
+- Verified: build 35701853150 green on 6563716. APK 11,437,787 bytes, SHA256
+  c2db3ea306d0669469666389db2bd552826acdbce174847cbaaadf4793cc55d9 — 17,783 bytes smaller
+  than 0.1.8, which is the removed card, drawables and strings against the plural helper.
+- Not verified: not run on a device. CI cannot see a colour, so whether black actually reads
+  better than the gradient is the user's call on the panel.
 
 ## 0.1.8 trash screen (built green, confirmed working on the device)
 - 0.1.6 made deletion recoverable through Android's trash but never listed it anywhere, so the user

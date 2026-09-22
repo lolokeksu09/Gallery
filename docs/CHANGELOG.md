@@ -6,7 +6,12 @@ this file says so instead of guessing.
 
 ## 0.1.9 — versionCode 10
 
-Not built yet; this entry is completed once CI reports the size and hash.
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35701853150 (commit 6563716).
+APK 11,437,787 bytes, SHA256 c2db3ea306d0669469666389db2bd552826acdbce174847cbaaadf4793cc55d9.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+17,783 bytes smaller than 0.1.8: the statistics card, two drawables and the explanatory strings
+outweigh the plural helper.
+Not run on a device.
 
 Changed — Material 3 on AMOLED
 - The page is true black on every theme. The backdrop gradient is gone, and with it the tinted gaps
