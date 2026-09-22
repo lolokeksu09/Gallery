@@ -30,6 +30,8 @@ import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.grid.*
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -52,6 +54,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -449,37 +452,23 @@ private fun GalleryHome(
                 }
             }
         },
-        bottomBar = { NavigationBar(containerColor = palette.chrome) {
-            val labels = listOf("Фото", "Альбомы", "Избранное", "Настройки")
-            labels.forEachIndexed { index, label ->
-                NavigationBarItem(selected = tab == index, onClick = {
-                    if (index == SETTINGS_TAB && tab == SETTINGS_TAB) {
-                        val now = System.currentTimeMillis()
-                        taps = if (now - lastTap < TAP_WINDOW_MS) taps + 1 else 1
-                        lastTap = now
-                        val left = VAULT_TAPS - taps
-                        when {
-                            left <= 0 -> { taps = 0; onVault() }
-                            left <= 2 -> Toast.makeText(context, "Ещё $left", Toast.LENGTH_SHORT).show()
-                        }
-                    } else {
-                        taps = 0
-                        onTab(index)
+        bottomBar = {
+            GalleryNavBar(tab) { index ->
+                if (index == SETTINGS_TAB && tab == SETTINGS_TAB) {
+                    val now = System.currentTimeMillis()
+                    taps = if (now - lastTap < TAP_WINDOW_MS) taps + 1 else 1
+                    lastTap = now
+                    val left = VAULT_TAPS - taps
+                    when {
+                        left <= 0 -> { taps = 0; onVault() }
+                        left <= 2 -> Toast.makeText(context, "Ещё $left", Toast.LENGTH_SHORT).show()
                     }
-                }, label = { Text(label) }, colors = NavigationBarItemDefaults.colors(
-                    selectedIconColor = palette.accent, selectedTextColor = palette.accent,
-                    unselectedIconColor = palette.muted, unselectedTextColor = palette.muted,
-                    indicatorColor = palette.accent.copy(alpha = .16f)
-                ), icon = {
-                    when (index) {
-                        0 -> Icon(photosIcon(), label)
-                        1 -> Icon(albumsIcon(), label)
-                        2 -> Icon(Icons.Default.Favorite, label)
-                        else -> Icon(Icons.Default.Settings, label)
-                    }
-                })
+                } else {
+                    taps = 0
+                    onTab(index)
+                }
             }
-        } }
+        }
     ) { padding ->
         AnimatedContent(
             targetState = tab to album,
@@ -512,6 +501,60 @@ private fun GalleryHome(
                         )
                     }
                 }
+            }
+        }
+    }
+}
+
+/**
+ * Material's own navigation bar is 80dp before the gesture inset, and with a label, a full-width
+ * tinted slab and a 64x32 indicator behind every icon it was the heaviest thing on the screen.
+ * This one is 56dp, sits on the black page with no slab, and gives the indicator only to the tab
+ * that is actually selected.
+ */
+@Composable
+private fun GalleryNavBar(tab: Int, onSelect: (Int) -> Unit) {
+    val palette = LocalGalleryPalette.current
+    val labels = listOf("Фото", "Альбомы", "Избранное", "Настройки")
+    Row(
+        Modifier.fillMaxWidth().background(palette.backdrop)
+            .windowInsetsPadding(WindowInsets.navigationBars)
+            .height(56.dp).selectableGroup(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        labels.forEachIndexed { index, label ->
+            val selected = tab == index
+            val pill by animateColorAsState(
+                if (selected) palette.accent.copy(alpha = .18f) else Color.Transparent,
+                tween(220), label = "navPill"
+            )
+            val tint by animateColorAsState(
+                if (selected) palette.accent else palette.muted, tween(220), label = "navTint"
+            )
+            Column(
+                Modifier.weight(1f).fillMaxHeight()
+                    .selectable(selected = selected, role = Role.Tab) { onSelect(index) },
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Box(
+                    Modifier.clip(CircleShape).background(pill)
+                        .padding(horizontal = 13.dp, vertical = 2.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    val icon = when (index) {
+                        0 -> photosIcon()
+                        1 -> albumsIcon()
+                        2 -> rememberVectorPainter(Icons.Default.Favorite)
+                        else -> rememberVectorPainter(Icons.Default.Settings)
+                    }
+                    Icon(icon, label, Modifier.size(20.dp), tint = tint)
+                }
+                Text(
+                    label, style = MaterialTheme.typography.labelSmall, color = tint,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 3.dp)
+                )
             }
         }
     }

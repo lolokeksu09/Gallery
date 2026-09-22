@@ -4,6 +4,25 @@ Version-to-version history of the Gallery application. Every version bump adds a
 Sizes and hashes come from the CI build that produced that version; where a build was not measured,
 this file says so instead of guessing.
 
+## 0.1.10 — versionCode 11
+
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35703348789 (commit 0534e5a).
+APK 11,405,015 bytes, SHA256 8fd684b0b822f80687703cc201f243fb378dc77bc6a7a73a3ddd1037f1d945ef.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+32,772 bytes smaller than 0.1.9: a small composable replaced Material's NavigationBar and
+NavigationBarItem, which carried their own layout and animation code.
+Not run on a device.
+
+Changed
+- The navigation bar is compact. Material's own is 80dp before the gesture inset, and with a label
+  under every icon, a full-width tinted slab and a 64x32 indicator behind each icon it was the
+  heaviest thing on the screen. The bar is now 56dp, sits on the black page with no slab, carries a
+  46x24 indicator and only on the selected tab, and its icons are 20dp with a labelSmall caption.
+  About a quarter shorter, and the weight it had came off with the slab.
+- It is a small composable of our own rather than Material's NavigationBar, because the height of
+  that one is fixed inside the component and fighting it from the outside risks clipping the label.
+  Selection semantics (selectableGroup, Role.Tab) and the colour animation are kept.
+
 ## 0.1.9 — versionCode 10
 
 Build: https://github.com/lolokeksu09/Gallery/actions/runs/35701853150 (commit 6563716).
