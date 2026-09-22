@@ -1,5 +1,17 @@
 # Progress
 
+## 0.1.13 the debt in Next (pending CI)
+- The user confirmed 0.1.12 and said to carry on without naming anything, so this is the list
+  PROGRESS itself was carrying rather than a new feature.
+- Three things, all found by reading: the media keys were rebuilt on every read, the cursor
+  columns were looked up by name per column per row, and the outgoing tab re-sorted the library
+  on every frame of the tab transition.
+- Honest about the size of it: at 184 files none of this is felt. It is worth doing because each
+  one scales with the library, and none of it changes behaviour.
+- Still open and deliberately untouched: the library is read whole into memory with no paging.
+  That is a real change of shape, not a cleanup, and it should be its own piece of work.
+- Not verified: not built yet, not run on a device.
+
 ## 0.1.12 tile transform, predictive back, date while scrolling (confirmed on the device)
 - The user confirmed every outstanding device check and asked for a more modern interface. Three
   of the four things offered were taken; the fast scroller was deferred on size grounds.
@@ -113,8 +125,9 @@
 ## Next
 1. Nothing is waiting on a device check. Everything carried as a debt since 0.1.6 came back
    confirmed, including the cases that could have lost files.
-2. Grid and viewer still hold the whole library in memory with no paging; the cursor column
-   lookups repeat per row. Neither is felt at this size.
+2. Grid and viewer still hold the whole library in memory with no paging. The cursor column
+   lookups were fixed in 0.1.13; paging was left alone as a change of shape rather than a
+   cleanup.
 3. A fast scroller with a date bubble was offered and deferred: it earns its place from a few
    thousand files, not from a few hundred.
 
