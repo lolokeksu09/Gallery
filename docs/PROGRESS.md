@@ -1,5 +1,14 @@
 # Progress
 
+## 0.1.10 compact navigation bar (pending CI)
+- The user accepted 0.1.9 but called the bottom bar bulky. It was: 80dp plus the gesture inset, a
+  tinted slab across the width, a label under every icon and a 64x32 indicator behind each one.
+- Now 56dp on the black page, no slab, a smaller indicator on the selected tab only.
+- Written as our own composable: NavigationBar fixes its height internally, and forcing it from
+  outside risks clipping the label with no way to see that from here.
+- The five-tap vault entry still lives on the Settings tab and is unchanged.
+- Not verified: not built yet, not run on a device.
+
 ## 0.1.9 Material 3 AMOLED (built green, not device-tested)
 - The user called the layout "нейрослоп" and asked for a modern Material 3 AMOLED design. The page
   is now true black and the tint lives on Material's tonal container ramp, not in a gradient behind
