@@ -10,6 +10,7 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.AnimatedVisibilityScope
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.Spring
@@ -99,8 +100,10 @@ internal fun Context.activity(): Activity? {
 }
 
 @Composable
-fun MediaViewer(media: List<GalleryMedia>, initialKey: String, isFavorite: (GalleryMedia) -> Boolean, onClose: () -> Unit,
-    onFavorite: (GalleryMedia) -> Unit, onDelete: (GalleryMedia) -> Unit, onHide: ((GalleryMedia) -> Unit)? = null) {
+fun MediaViewer(media: List<GalleryMedia>, initialKey: String, isFavorite: (GalleryMedia) -> Boolean,
+    onClose: () -> Unit, onFavorite: (GalleryMedia) -> Unit, onDelete: (GalleryMedia) -> Unit,
+    onHide: ((GalleryMedia) -> Unit)? = null,
+    animatedScope: AnimatedVisibilityScope? = null, onPage: (String) -> Unit = {}) {
     val context = LocalContext.current
     val view = LocalView.current
     val pager = rememberPagerState(initialPage = media.indexOfFirst { it.key == initialKey }.coerceAtLeast(0), pageCount = { media.size })
@@ -109,7 +112,9 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, isFavorite: (Gall
     // Application chrome and the system bars: hidden together so video fills the whole screen.
     var chrome by remember { mutableStateOf(true) }
     val current = media[pager.currentPage.coerceIn(media.indices)]
-    LaunchedEffect(pager.currentPage) { zoomed = false; chrome = true }
+    // The grid needs to know which photograph is on screen, not which one opened the viewer:
+    // closing after a few swipes has to land on the tile the user is actually looking at.
+    LaunchedEffect(pager.currentPage) { zoomed = false; chrome = true; onPage(current.key) }
     val insets = remember(view) { context.activity()?.window?.let { WindowCompat.getInsetsController(it, view) } }
     LaunchedEffect(chrome, insets) {
         insets?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
@@ -168,7 +173,13 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, isFavorite: (Gall
             HorizontalPager(state = pager, key = { media[it].key }, userScrollEnabled = !zoomed, modifier = Modifier.fillMaxSize()) { index ->
                 val item = media[index]
                 if (item.video && index == pager.currentPage) VideoPlayer(item, chrome) { chrome = it }
-                else ZoomableImage(item, onZoom = { if (index == pager.currentPage) zoomed = it }, onTap = { chrome = !chrome })
+                else ZoomableImage(
+                    item,
+                    // Only the page on screen takes part in the transform, and only a photograph:
+                    // a PlayerView inside an AndroidView does not render into the shared overlay.
+                    shared = if (index == pager.currentPage) Modifier.sharedMedia(item.key, animatedScope) else Modifier,
+                    onZoom = { if (index == pager.currentPage) zoomed = it }, onTap = { chrome = !chrome }
+                )
             }
         }
         AnimatedVisibility(chrome && dragging == 0f,
@@ -217,7 +228,7 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, isFavorite: (Gall
 }
 
 @Composable
-internal fun ZoomableImage(media: GalleryMedia, onZoom: (Boolean) -> Unit, onTap: () -> Unit) {
+internal fun ZoomableImage(media: GalleryMedia, onZoom: (Boolean) -> Unit, onTap: () -> Unit, shared: Modifier = Modifier) {
     var scale by remember(media.key) { mutableFloatStateOf(1f) }
     var offset by remember(media.key) { mutableStateOf(Offset.Zero) }
     var bounds by remember { mutableStateOf(IntSize.Zero) }
@@ -255,7 +266,7 @@ internal fun ZoomableImage(media: GalleryMedia, onZoom: (Boolean) -> Unit, onTap
     val transformed = Modifier.fillMaxSize().graphicsLayer {
         scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y
     }
-    Box(Modifier.fillMaxSize().background(Color.Black)
+    Box(Modifier.fillMaxSize().then(shared).background(Color.Black)
         .onSizeChanged { bounds = it }
         .pointerInput(media.key) { detectTapGestures(
             onTap = { onTap() },
