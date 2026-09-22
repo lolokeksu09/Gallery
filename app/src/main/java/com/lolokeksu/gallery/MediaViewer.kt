@@ -49,7 +49,10 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
@@ -199,13 +202,35 @@ internal fun VideoPlayer(media: GalleryMedia, chrome: Boolean, onChrome: (Boolea
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val player = remember(media.key) {
         ExoPlayer.Builder(context).build().apply {
+            // Audio focus is off by default, so a video used to play over whatever the user was
+            // already listening to. USAGE_MEDIA is required: automatic focus only covers usages
+            // that ask for permanent focus, and setAudioAttributes throws on the others.
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                /* handleAudioFocus = */ true
+            )
             setMediaItem(MediaItem.fromUri(media.uri)); prepare(); playWhenReady = true
         }
     }
+    // PlayerView does not keep the screen awake by itself, so a long video used to be cut off by
+    // the display timeout. Tied to actual playback rather than to the screen being open, so a
+    // paused video lets the phone sleep as usual.
+    var playing by remember(media.key) { mutableStateOf(false) }
     DisposableEffect(player, lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE) player.pause() }
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+        }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer); player.release() }
+        player.addListener(listener)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            player.removeListener(listener)
+            player.release()
+        }
     }
     val latestChrome by rememberUpdatedState(onChrome)
     AndroidView(
@@ -224,6 +249,7 @@ internal fun VideoPlayer(media: GalleryMedia, chrome: Boolean, onChrome: (Boolea
         },
         update = { playerView ->
             playerView.player = player
+            playerView.keepScreenOn = playing
             // Keep Media3 controls and application chrome in the same state after an
             // external toggle (back gesture, page change).
             if (chrome) playerView.showController() else playerView.hideController()
