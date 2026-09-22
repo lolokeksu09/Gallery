@@ -6,7 +6,12 @@ this file says so instead of guessing.
 
 ## 0.1.13 — versionCode 14
 
-Not built yet; this entry is completed once CI reports the size and hash.
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35731982097 (commit efc1817).
+APK 11,552,503 bytes, SHA256 683f922c00fafbacfd34c089c0215d90b34fa5f3ca568f1dfd121108a18536e0.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+Byte for byte the same size as 0.1.12, which is what moving work from run time to construction
+time looks like: the same code, arranged differently.
+Not run on a device.
 
 Nothing here changes what the application looks like or does. It is the debt PROGRESS has been
 carrying, found by reading the code rather than by using it, and at 184 files none of it is

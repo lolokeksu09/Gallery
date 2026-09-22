@@ -1,6 +1,6 @@
 # Progress
 
-## 0.1.13 the debt in Next (pending CI)
+## 0.1.13 the debt in Next (built green, not device-tested)
 - The user confirmed 0.1.12 and said to carry on without naming anything, so this is the list
   PROGRESS itself was carrying rather than a new feature.
 - Three things, all found by reading: the media keys were rebuilt on every read, the cursor
@@ -10,7 +10,13 @@
   one scales with the library, and none of it changes behaviour.
 - Still open and deliberately untouched: the library is read whole into memory with no paging.
   That is a real change of shape, not a cleanup, and it should be its own piece of work.
-- Not verified: not built yet, not run on a device.
+- Verified: build 35731982097 green on efc1817. APK 11,552,503 bytes, SHA256
+  683f922c00fafbacfd34c089c0215d90b34fa5f3ca568f1dfd121108a18536e0 — byte for byte the size
+  of 0.1.12, which is what moving work from run time to construction time looks like.
+- Not verified: not run on a device, and there is nothing here a device would show. No
+  measurement was taken: the sandbox cannot profile and CI does not either, so the claim is
+  that fewer allocations and fewer string scans happen, not that anything got faster by a
+  number anyone counted.
 
 ## 0.1.12 tile transform, predictive back, date while scrolling (confirmed on the device)
 - The user confirmed every outstanding device check and asked for a more modern interface. Three
