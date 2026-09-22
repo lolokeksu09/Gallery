@@ -56,6 +56,8 @@ import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.size.Size
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.text.DateFormat
@@ -66,6 +68,17 @@ private const val VIDEO_CHROME_TIMEOUT_MS = 5000
 private const val ZOOM_ANIMATION_MS = 260
 private const val MAX_ZOOM = 5f
 private const val DOUBLE_TAP_ZOOM = 2.5f
+
+/**
+ * Longest side of the detail layer requested once a photograph is zoomed. A full
+ * fifty-megapixel frame decodes to about two hundred megabytes, which is an out of memory
+ * crash rather than a sharper picture, so the request is capped instead of asking for the
+ * original.
+ */
+private const val MAX_DETAIL_PIXELS = 4096
+
+/** Below this the screen-sized layer is already sharp enough to not pay for a second decode. */
+private const val DETAIL_FROM_SCALE = 1.2f
 
 internal fun Context.activity(): Activity? {
     var current: Context? = this
@@ -179,14 +192,35 @@ internal fun ZoomableImage(media: GalleryMedia, onZoom: (Boolean) -> Unit, onTap
         offset = clamp(offset + pan, next)
         onZoom(next > 1f)
     }
+    val context = LocalContext.current
+    // Both layers carry the same transform, or the sharp one would drift away from the one
+    // underneath it during a pinch.
+    val transformed = Modifier.fillMaxSize().graphicsLayer {
+        scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y
+    }
     Box(Modifier.fillMaxSize().background(Color.Black)
         .onSizeChanged { bounds = it }
         .pointerInput(media.key) { detectTapGestures(
             onTap = { onTap() },
             onDoubleTap = { animateZoom(if (scale > 1f) 1f else DOUBLE_TAP_ZOOM) }) }
         .transformable(state = transform, canPan = { scale > 1f }), contentAlignment = Alignment.Center) {
+        // The base layer is sized to the screen, which is all Coil was ever asked for: zooming to
+        // five times used to magnify those same pixels, so the detail simply was not there.
         AsyncImage(model = media.uri, contentDescription = media.name, contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y })
+            modifier = transformed)
+        if (scale > DETAIL_FROM_SCALE) {
+            // Mounted only while zoomed and dropped on the way back, so the larger bitmap is not
+            // held for every page of the pager. It fades in over the base layer, which keeps
+            // showing in the meantime, so there is no blank frame while it decodes.
+            val detail = remember(media.key) {
+                ImageRequest.Builder(context)
+                    .data(media.uri)
+                    .size(Size(MAX_DETAIL_PIXELS, MAX_DETAIL_PIXELS))
+                    .build()
+            }
+            AsyncImage(model = detail, contentDescription = null, contentScale = ContentScale.Fit,
+                modifier = transformed)
+        }
     }
 }
 
