@@ -1,6 +1,6 @@
 # Progress
 
-## 0.1.8 trash screen (pending CI)
+## 0.1.8 trash screen (built green, not device-tested)
 - 0.1.6 made deletion recoverable through Android's trash but never listed it anywhere, so the user
   looked for a trash in the application and did not find one. Settings now has one.
 - Restore and permanent erase both go back to the platform, which confirms them itself.
@@ -8,7 +8,11 @@
   trashed items it does not own. If it cannot, the screen will look empty right after a deletion;
   its empty state says exactly that instead of claiming the trash is empty. Only the device answers
   this.
-- Not verified: not run on a device.
+- Verified: build 35691402664 green on 21a3341. APK 11,455,570 bytes, SHA256
+  01d0bdfac947aca5ca46bab26434a18cc3cf09e2c9d7624374a7816ef1b50c8d — 65,536 bytes more than
+  0.1.7, which is the screen and the query behind it.
+- Not verified: not run on a device. Whether the list fills after a deletion is the first thing
+  to check, since that is what the open question above decides.
 
 ## 0.1.7 media type filter (built green, not device-tested)
 - Only media types a phone produces are read from MediaStore. A downloaded web project had put 127
@@ -41,8 +45,9 @@
 - Not verified: nothing in 0.1.6 has run on a device.
 
 ## Next
-1. Device test: batch hide with the dialog refused (nothing may be lost), batch delete and restore
-   from the system trash, rotation during an active selection, video scroll speed.
+1. Device test: open Settings → Файлы → Корзина after deleting something and see whether it is
+   listed; batch hide with the dialog refused (nothing may be lost), batch delete and restore,
+   rotation during an active selection, video scroll speed.
 2. Physical Android 13 smoke tests still outstanding from earlier releases.
 3. Favorites still key on the content URI; a stable key needs a migration.
 

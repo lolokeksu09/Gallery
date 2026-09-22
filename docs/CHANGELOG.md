@@ -6,7 +6,11 @@ this file says so instead of guessing.
 
 ## 0.1.8 — versionCode 9
 
-Not built yet; this entry is completed once CI reports the size and hash.
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35691402664 (commit 21a3341).
+APK 11,455,570 bytes, SHA256 01d0bdfac947aca5ca46bab26434a18cc3cf09e2c9d7624374a7816ef1b50c8d.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+That is 65,536 bytes more than 0.1.7 — the trash screen and the repository query behind it.
+Not run on a device.
 
 Added
 - A trash screen, in Settings under "Файлы". 0.1.6 changed deletion to createTrashRequest, so files
