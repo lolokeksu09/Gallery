@@ -18,6 +18,32 @@ data class GalleryMedia(
     val path: String, val mime: String, val video: Boolean, val duration: Long
 ) { val key: String get() = uri.toString() }
 
+/**
+ * Which media types the gallery shows at all.
+ *
+ * MediaStore indexes every image and video on the device, including things that are not photos:
+ * icons, sprites and other assets that arrive with downloaded web content. Filtering happens in
+ * the query rather than in the interface, so those files never enter the application.
+ *
+ * This is an allowlist, so an unlisted type disappears silently. Everything an Android camera,
+ * a screenshot or a messenger produces is here; add a type rather than removing the filter if
+ * something real turns out to be missing.
+ */
+object MediaTypes {
+    val photos = listOf(
+        "image/jpeg", "image/jpg", "image/png", "image/heic", "image/heif",
+        "image/webp", "image/gif", "image/bmp", "image/x-ms-bmp",
+        "image/dng", "image/x-adobe-dng"
+    )
+
+    val videos = listOf(
+        "video/mp4", "video/3gpp", "video/3gpp2", "video/webm", "video/x-matroska",
+        "video/quicktime", "video/mpeg", "video/mp2t", "video/x-msvideo"
+    )
+
+    fun of(video: Boolean) = if (video) videos else photos
+}
+
 enum class SortOrder(val label: String) { NEWEST("Сначала новые"), OLDEST("Сначала старые"), NAME("По названию") }
 
 fun formatDuration(ms: Long): String {
@@ -68,8 +94,13 @@ class MediaRepository(private val context: Context) {
             "datetaken", "date_added", "_size", "width", "height", "relative_path", "mime_type", "volume_name")
         if (video) projection += "duration"
         val result = mutableListOf<GalleryMedia>()
+        // Bound arguments rather than an interpolated list: MediaStore rejects selections it
+        // cannot parse, and the types never reach the SQL text.
+        val types = MediaTypes.of(video)
+        val selection = "is_pending = 0 AND is_trashed = 0 AND mime_type IN (" +
+            types.joinToString(",") { "?" } + ")"
         context.contentResolver.query(collection, projection.toTypedArray(),
-            "is_pending = 0 AND is_trashed = 0", null, "date_added DESC")?.use { c ->
+            selection, types.toTypedArray(), "date_added DESC")?.use { c ->
             fun s(name: String) = c.getString(c.getColumnIndexOrThrow(name)) ?: ""
             fun n(name: String) = c.getLong(c.getColumnIndexOrThrow(name))
             while (c.moveToNext()) {

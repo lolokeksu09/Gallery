@@ -1,5 +1,17 @@
 # Progress
 
+## 0.1.7 media type filter (built green, not device-tested)
+- Only media types a phone produces are read from MediaStore. A downloaded web project had put 127
+  AVIF sprites into an album, where they did not even render. Filtering happens in the query, so
+  such files never enter the application.
+- The filter is an allowlist and therefore hides silently when an entry is missing; MediaTypesTest
+  guards the formats a camera, screenshot or messenger produces.
+- Verified: build 35689518604 green on fa85094. APK 11,390,034 bytes, SHA256
+  97b0049b6017e07e8bddcddaa95b8917321ba143e33a6339a27451fde9bce44a — the same size as 0.1.6,
+  since the change is a query filter rather than new code.
+- Not verified: not run on a device. The user should confirm the album of web assets is gone and
+  that nothing real went with it.
+
 ## 0.1.6 privacy, trash, thumbnails and multi-select (built green, audited, not device-tested)
 - FLAG_SECURE while the vault is open or unlocked; the unlocked vault no longer reaches the recents
   snapshot. Wrong-password count persisted, so a force stop no longer bypasses the lockout.
