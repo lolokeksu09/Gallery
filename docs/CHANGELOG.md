@@ -4,6 +4,21 @@ Version-to-version history of the Gallery application. Every version bump adds a
 Sizes and hashes come from the CI build that produced that version; where a build was not measured,
 this file says so instead of guessing.
 
+## 0.1.7 — versionCode 8
+
+Not built yet; this entry is completed once CI reports the size and hash.
+
+Changed
+- The gallery only shows media types a phone actually produces. MediaStore indexes every image and
+  video on the device, so a downloaded web project put 127 AVIF sprites of 128x128 into an album,
+  where they did not even render. The filter is a MIME allowlist applied in the MediaStore query, so
+  those files never enter the application rather than being hidden in the interface.
+- Kept: jpeg, jpg, png, heic, heif, webp, gif, bmp, dng for photos; mp4, 3gpp, 3gpp2, webm, mkv,
+  quicktime, mpeg, mp2t, avi for video. Everything a camera, a screenshot or a messenger produces.
+- Excluded by consequence: avif, svg, ico and anything else not on the list.
+- MediaTypesTest guards the list, because an allowlist hides real photos silently when an entry is
+  missing. If something real disappears, its type from the details dialog is a one-line addition.
+
 ## 0.1.6 — versionCode 7
 
 Build: https://github.com/lolokeksu09/Gallery/actions/runs/35532400821 (commit 03b1367).

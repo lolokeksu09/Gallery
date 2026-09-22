@@ -1,5 +1,14 @@
 # Progress
 
+## 0.1.7 media type filter (pending CI)
+- Only media types a phone produces are read from MediaStore. A downloaded web project had put 127
+  AVIF sprites into an album, where they did not even render. Filtering happens in the query, so
+  such files never enter the application.
+- The filter is an allowlist and therefore hides silently when an entry is missing; MediaTypesTest
+  guards the formats a camera, screenshot or messenger produces.
+- Not verified: not run on a device. The user should confirm the album of web assets is gone and
+  that nothing real went with it.
+
 ## 0.1.6 privacy, trash, thumbnails and multi-select (built green, audited, not device-tested)
 - FLAG_SECURE while the vault is open or unlocked; the unlocked vault no longer reaches the recents
   snapshot. Wrong-password count persisted, so a force stop no longer bypasses the lockout.
