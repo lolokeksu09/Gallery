@@ -1,6 +1,6 @@
 # Progress
 
-## 0.1.11 viewer defects and a stable favorite key (pending CI)
+## 0.1.11 viewer defects and a stable favorite key (built green, not device-tested)
 - Four things the device shows and the build cannot: video played over the user's music (no audio
   focus), the screen slept during a long video (PlayerView does not hold it), zooming magnified
   screen-sized pixels instead of loading real ones, and there was no drag-down to leave.
@@ -11,7 +11,14 @@
 - Favorites moved off the content URI onto volume + relative path + name, closing the debt carried
   since 0.1.3. Migration keeps unmatched entries forever and only folds on a trustworthy read,
   which is the rule the 0.1.6 audit paid for.
-- Not verified: not built yet, not run on a device.
+- Verified: build 35707583676 green on 7b9561c. APK 11,437,783 bytes, SHA256
+  287db6b39554721317a81ab1001b266ff1fb7fed9ede4c08faa23a87df393408 — 32,768 bytes more than
+  0.1.10. FavoriteKeysTest and the rest of the suite pass.
+- Not verified: not run on a device. Nothing here is provable from a build — audio focus,
+  the screen timeout, whether zoom actually looks sharper and whether the drag competes with
+  the pager all need the phone.
+- The migration has never run against real stored data. That is the one to watch: marks made
+  before this version must still be there after it.
 
 ## 0.1.10 compact navigation bar (built green, not device-tested)
 - The user accepted 0.1.9 but called the bottom bar bulky. It was: 80dp plus the gesture inset, a

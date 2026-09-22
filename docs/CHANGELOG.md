@@ -6,7 +6,11 @@ this file says so instead of guessing.
 
 ## 0.1.11 — versionCode 12
 
-Not built yet; this entry is completed once CI reports the size and hash.
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35707583676 (commit 7b9561c).
+APK 11,437,783 bytes, SHA256 287db6b39554721317a81ab1001b266ff1fb7fed9ede4c08faa23a87df393408.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+32,768 bytes more than 0.1.10, which is the detail layer, the dismiss gesture and the migration.
+Not run on a device.
 
 Fixed — the viewer
 - Video asks for audio focus. ExoPlayer does not unless told to, so a video used to play over
