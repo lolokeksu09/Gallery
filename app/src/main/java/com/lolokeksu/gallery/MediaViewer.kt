@@ -116,7 +116,10 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, isFavorite: (Gall
         if (chrome) insets?.show(WindowInsetsCompat.Type.systemBars()) else insets?.hide(WindowInsetsCompat.Type.systemBars())
     }
     DisposableEffect(insets) { onDispose { insets?.show(WindowInsetsCompat.Type.systemBars()) } }
-    BackHandler { if (!chrome) chrome = true else onClose() }
+    // Bringing the chrome back is a step inside the viewer, so it stays an ordinary back press;
+    // only leaving the viewer gets the predictive animation.
+    BackHandler(!chrome) { chrome = true }
+    val back = predictiveBackProgress(chrome, onBack = onClose)
 
     // Drag down to leave. Only on photographs: a PlayerView inside an AndroidView takes touches
     // for itself, and intercepting them on the initial pass would break the playback controls.
@@ -134,6 +137,7 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, isFavorite: (Gall
             // The page behind the media thins out as the media travels, so the drag reads as
             // leaving rather than as the photograph sliding off on its own.
             .background(Color.Black.copy(alpha = 1f - dragging * .8f))
+            .predictiveBack(back)
     ) {
         Box(
             Modifier.fillMaxSize()

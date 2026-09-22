@@ -58,13 +58,15 @@ fun VaultScreen(vm: VaultViewModel, onClose: () -> Unit) {
     var settings by remember { mutableStateOf(false) }
     var confirmDelete by remember { mutableStateOf<VaultItem?>(null) }
 
-    BackHandler { if (opened != null) opened = null else onClose() }
+    // Closing an opened file is a step inside the vault, not a way out of it.
+    BackHandler(opened != null) { opened = null }
+    val back = predictiveBackProgress(opened == null, onBack = onClose)
 
     // The vault is drawn over the gallery, so without swallowing unhandled taps they would reach
     // the settings page and navigation bar underneath — including the row that opens system
     // settings, which backgrounds the application and locks the vault mid-entry.
     Box(
-        Modifier.fillMaxSize().background(palette.backdrop)
+        Modifier.fillMaxSize().background(palette.backdrop).predictiveBack(back)
             .pointerInput(Unit) { detectTapGestures { } }
     ) {
         when {
