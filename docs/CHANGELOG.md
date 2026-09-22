@@ -4,6 +4,42 @@ Version-to-version history of the Gallery application. Every version bump adds a
 Sizes and hashes come from the CI build that produced that version; where a build was not measured,
 this file says so instead of guessing.
 
+## 0.1.11 — versionCode 12
+
+Build: https://github.com/lolokeksu09/Gallery/actions/runs/35707583676 (commit 7b9561c).
+APK 11,437,783 bytes, SHA256 287db6b39554721317a81ab1001b266ff1fb7fed9ede4c08faa23a87df393408.
+Static checks, unit tests, Android Lint, assembleDebug and the APK permission audit passed.
+32,768 bytes more than 0.1.10, which is the detail layer, the dismiss gesture and the migration.
+Not run on a device.
+
+Fixed — the viewer
+- Video asks for audio focus. ExoPlayer does not unless told to, so a video used to play over
+  whatever the user was already listening to instead of pausing it.
+- The screen stays awake while a video plays. PlayerView does not do this itself, so a long video
+  was cut off by the display timeout. Tied to playback, not to the viewer being open, so a paused
+  video lets the phone sleep as usual.
+- Zooming shows real detail. Coil was only ever asked for a screen-sized image, so five times
+  magnified those same pixels — the detail was never loaded rather than blurred. A second layer is
+  requested at up to 4096 on the longest side past 1.2x and dropped on the way back. The cap is
+  deliberate: a fifty-megapixel frame at full size decodes to roughly two hundred megabytes.
+
+Added
+- Drag a photograph down to leave the viewer. Past 110dp letting go closes; short of it the media
+  springs back. Not on video: a PlayerView takes touches for itself and intercepting them would
+  break the playback controls.
+
+Changed — favorites survive a MediaStore rescan
+- Favorites were keyed to the content URI, whose row id MediaStore reassigns when it rebuilds its
+  index; after a rescan every mark pointed at nothing or at a different photograph. The key is now
+  the file itself: volume, relative path and name. Where there is no relative path the URI stays,
+  rather than collapsing every such file onto one shared key.
+- Old keys move to a legacy set and are folded in only on a read that can be trusted — full
+  access, no error, a non-empty result. An unmatched entry is kept forever. This is the rule the
+  0.1.6 audit paid for: the library reads empty with the permission revoked, so "not found" must
+  never mean "gone".
+- FavoriteMigration holds both decisions free of Android types and FavoriteKeysTest covers them,
+  including that an empty library loses nothing and that a second pass changes nothing.
+
 ## 0.1.10 — versionCode 11
 
 Build: https://github.com/lolokeksu09/Gallery/actions/runs/35703348789 (commit 0534e5a).

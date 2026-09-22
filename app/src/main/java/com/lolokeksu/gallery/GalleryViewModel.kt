@@ -17,7 +17,14 @@ import kotlinx.coroutines.flow.*
 
 private val Context.galleryStore by preferencesDataStore("gallery")
 data class GalleryState(
-    val media: List<GalleryMedia> = emptyList(), val favorites: Set<String> = emptySet(),
+    val media: List<GalleryMedia> = emptyList(),
+    /** Favorites by stable key. */
+    val favorites: Set<String> = emptySet(),
+    /**
+     * Favorites still stored against a content URI, from before the stable key existed. They are
+     * folded into [favorites] as the library accounts for them and are never dropped otherwise.
+     */
+    val legacyFavorites: Set<String> = emptySet(),
     val columns: Int = 3, val sort: SortOrder = SortOrder.NEWEST, val theme: String = "amethyst",
     val loading: Boolean = true, val error: String? = null, val canRead: Boolean = false,
     val partial: Boolean = false,
@@ -25,10 +32,16 @@ data class GalleryState(
     val trash: List<GalleryMedia> = emptyList(), val trashLoading: Boolean = false
 )
 
+/** The one place that answers it, because the answer now lives in two sets rather than one. */
+fun GalleryState.isFavorite(media: GalleryMedia): Boolean =
+    media.stableKey in favorites || media.key in legacyFavorites
+
 class GalleryViewModel(app: Application) : AndroidViewModel(app) {
     private val repository = MediaRepository(app)
     private val store = app.galleryStore
     private val favoritesKey = stringSetPreferencesKey("favorites")
+    private val legacyFavoritesKey = stringSetPreferencesKey("favorites_uri")
+    private val migratedKey = booleanPreferencesKey("favorites_migrated_v2")
     private val columnsKey = intPreferencesKey("columns")
     private val sortKey = stringPreferencesKey("sort")
     private val themeKey = stringPreferencesKey("theme")
@@ -48,14 +61,54 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
         app.contentResolver.registerContentObserver(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, true, observer)
         app.contentResolver.registerContentObserver(MediaStore.Video.Media.EXTERNAL_CONTENT_URI, true, observer)
         viewModelScope.launch {
+            // Before the first emission, so the hearts are never read against the old shape.
+            migrateFavorites()
             store.data.catch { emit(emptyPreferences()) }.collect { prefs ->
                 val reload = mutable.value.loading
                 mutable.update { it.copy(favorites = prefs[favoritesKey] ?: emptySet(),
+                    legacyFavorites = prefs[legacyFavoritesKey] ?: emptySet(),
                     columns = (prefs[columnsKey] ?: 3).coerceIn(2, 5),
                     sort = SortOrder.entries.find { s -> s.name == prefs[sortKey] } ?: SortOrder.NEWEST,
                     theme = prefs[themeKey] ?: "amethyst") }
                 if (reload) refresh()
             }
+        }
+    }
+
+    /**
+     * One atomic edit: everything stored under the old shape moves to the legacy set and the
+     * stable set starts empty. Nothing is discarded, so a failure to match later costs nothing.
+     */
+    private suspend fun migrateFavorites() {
+        store.edit { prefs ->
+            if (prefs[migratedKey] == true) return@edit
+            val stored = prefs[favoritesKey] ?: emptySet()
+            if (stored.isNotEmpty()) {
+                prefs[legacyFavoritesKey] = (prefs[legacyFavoritesKey] ?: emptySet()) + stored
+            }
+            prefs[favoritesKey] = emptySet()
+            prefs[migratedKey] = true
+        }
+    }
+
+    /**
+     * Folds legacy URIs into stable keys using what the library just returned.
+     *
+     * Runs only on a read that can be trusted. An empty library means the permission is gone, not
+     * that the files are, and a partial grant hides most of them; converting against either would
+     * be a slow way of losing the set. Unmatched entries are left alone by [FavoriteMigration].
+     */
+    private suspend fun convertLegacyFavorites(media: List<GalleryMedia>) {
+        val current = mutable.value
+        if (current.legacyFavorites.isEmpty()) return
+        if (!current.canRead || current.partial || media.isEmpty()) return
+        val library = media.map { it.key to it.stableKey }
+        store.edit { prefs ->
+            val (favorites, legacy) = FavoriteMigration.convert(
+                prefs[legacyFavoritesKey] ?: emptySet(), prefs[favoritesKey] ?: emptySet(), library
+            )
+            prefs[favoritesKey] = favorites
+            prefs[legacyFavoritesKey] = legacy
         }
     }
     fun refresh() {
@@ -68,16 +121,23 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val media = repository.read()
                 mutable.update { it.copy(media = media, loading = false) }
+                convertLegacyFavorites(media)
             } catch (e: CancellationException) { throw e }
             catch (e: Exception) {
                 mutable.update { it.copy(loading = false, error = "Не удалось прочитать файлы. Проверь доступ и повтори.") }
             }
         }
     }
-    fun favorite(key: String) = viewModelScope.launch {
+    fun favorite(media: GalleryMedia) = viewModelScope.launch {
         store.edit { prefs ->
-            val old = prefs[favoritesKey] ?: emptySet()
-            prefs[favoritesKey] = if (key in old) old - key else old + key
+            val favorites = prefs[favoritesKey] ?: emptySet()
+            val legacy = prefs[legacyFavoritesKey] ?: emptySet()
+            val stable = media.stableKey
+            // The mark can currently come from either set, and turning it off has to clear both
+            // or an unconverted file would stay favorited through the legacy entry.
+            val on = stable in favorites || media.key in legacy
+            prefs[favoritesKey] = if (on) favorites - stable else favorites + stable
+            if (media.key in legacy) prefs[legacyFavoritesKey] = legacy - media.key
         }
     }
 
@@ -86,8 +146,18 @@ class GalleryViewModel(app: Application) : AndroidViewModel(app) {
      * reads empty and with a partial grant it reads partial, so removing keys whose file is
      * "missing" would delete favorites for files that are still there.
      */
-    fun favorite(keys: Set<String>) = viewModelScope.launch {
-        store.edit { prefs -> prefs[favoritesKey] = BatchPlan.nextFavorites(prefs[favoritesKey] ?: emptySet(), keys) }
+    fun favorite(media: List<GalleryMedia>) = viewModelScope.launch {
+        if (media.isEmpty()) return@launch
+        store.edit { prefs ->
+            val favorites = prefs[favoritesKey] ?: emptySet()
+            val legacy = prefs[legacyFavoritesKey] ?: emptySet()
+            val uris = media.map { it.key }.toSet()
+            // Fold this selection's legacy marks in first, so "already all favorited" is judged
+            // on one set instead of two and the group toggle keeps working.
+            val folded = favorites + media.filter { it.key in legacy }.map { it.stableKey }
+            prefs[favoritesKey] = BatchPlan.nextFavorites(folded, media.map { it.stableKey }.toSet())
+            if (legacy.any { it in uris }) prefs[legacyFavoritesKey] = legacy - uris
+        }
     }
     /**
      * Video tiles only. Coil decodes a frame out of the original file for every video tile and

@@ -1,5 +1,25 @@
 # Progress
 
+## 0.1.11 viewer defects and a stable favorite key (built green, not device-tested)
+- Four things the device shows and the build cannot: video played over the user's music (no audio
+  focus), the screen slept during a long video (PlayerView does not hold it), zooming magnified
+  screen-sized pixels instead of loading real ones, and there was no drag-down to leave.
+- The detail layer is capped at 4096 on the longest side. Uncapped, a fifty-megapixel frame is
+  about two hundred megabytes of bitmap, which is a crash rather than a sharper picture.
+- Drag to dismiss is photographs only. A PlayerView inside an AndroidView takes touches for
+  itself, and intercepting on the initial pass would break the playback controls.
+- Favorites moved off the content URI onto volume + relative path + name, closing the debt carried
+  since 0.1.3. Migration keeps unmatched entries forever and only folds on a trustworthy read,
+  which is the rule the 0.1.6 audit paid for.
+- Verified: build 35707583676 green on 7b9561c. APK 11,437,783 bytes, SHA256
+  287db6b39554721317a81ab1001b266ff1fb7fed9ede4c08faa23a87df393408 — 32,768 bytes more than
+  0.1.10. FavoriteKeysTest and the rest of the suite pass.
+- Not verified: not run on a device. Nothing here is provable from a build — audio focus,
+  the screen timeout, whether zoom actually looks sharper and whether the drag competes with
+  the pager all need the phone.
+- The migration has never run against real stored data. That is the one to watch: marks made
+  before this version must still be there after it.
+
 ## 0.1.10 compact navigation bar (built green, not device-tested)
 - The user accepted 0.1.9 but called the bottom bar bulky. It was: 80dp plus the gesture inset, a
   tinted slab across the width, a label under every icon and a 64x32 indicator behind each one.
@@ -83,7 +103,7 @@
    dialog refused (nothing may be lost — the invariant the vault rests on), and whether the
    trash screen lists files right after a deletion, which is what settles the open question
    under 0.1.8.
-2. Favorites still key on the content URI; a stable key needs a migration.
+2. Favorites now key on the file. Confirm on a device that existing marks survived the update.
 
 ## 0.1.5 colour system and silent vault (pending CI)
 - Hiding a file says nothing at all: a success or refusal message naming the file or the vault would

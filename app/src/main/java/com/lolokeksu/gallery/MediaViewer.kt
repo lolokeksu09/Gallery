@@ -10,7 +10,10 @@ import android.view.View
 import android.widget.Toast
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animate
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -19,6 +22,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.gestures.rememberTransformableState
 import androidx.compose.foundation.gestures.transformable
 import androidx.compose.foundation.layout.*
@@ -39,6 +43,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.IntSize
@@ -49,13 +54,19 @@ import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.ui.PlayerView
 import coil3.compose.AsyncImage
+import coil3.request.ImageRequest
+import coil3.size.Size
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import java.text.DateFormat
+import kotlin.math.abs
 import java.util.Date
 
 /** Controls stay on screen this long before the video goes edge-to-edge full screen. */
@@ -63,6 +74,20 @@ private const val VIDEO_CHROME_TIMEOUT_MS = 5000
 private const val ZOOM_ANIMATION_MS = 260
 private const val MAX_ZOOM = 5f
 private const val DOUBLE_TAP_ZOOM = 2.5f
+
+/** How far a downward drag has to travel before letting go closes the viewer. */
+private val DISMISS_DISTANCE = 110.dp
+
+/**
+ * Longest side of the detail layer requested once a photograph is zoomed. A full
+ * fifty-megapixel frame decodes to about two hundred megabytes, which is an out of memory
+ * crash rather than a sharper picture, so the request is capped instead of asking for the
+ * original.
+ */
+private const val MAX_DETAIL_PIXELS = 4096
+
+/** Below this the screen-sized layer is already sharp enough to not pay for a second decode. */
+private const val DETAIL_FROM_SCALE = 1.2f
 
 internal fun Context.activity(): Activity? {
     var current: Context? = this
@@ -74,8 +99,8 @@ internal fun Context.activity(): Activity? {
 }
 
 @Composable
-fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<String>, onClose: () -> Unit,
-    onFavorite: (String) -> Unit, onDelete: (GalleryMedia) -> Unit, onHide: ((GalleryMedia) -> Unit)? = null) {
+fun MediaViewer(media: List<GalleryMedia>, initialKey: String, isFavorite: (GalleryMedia) -> Boolean, onClose: () -> Unit,
+    onFavorite: (GalleryMedia) -> Unit, onDelete: (GalleryMedia) -> Unit, onHide: ((GalleryMedia) -> Unit)? = null) {
     val context = LocalContext.current
     val view = LocalView.current
     val pager = rememberPagerState(initialPage = media.indexOfFirst { it.key == initialKey }.coerceAtLeast(0), pageCount = { media.size })
@@ -92,13 +117,57 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<St
     }
     DisposableEffect(insets) { onDispose { insets?.show(WindowInsetsCompat.Type.systemBars()) } }
     BackHandler { if (!chrome) chrome = true else onClose() }
-    Box(Modifier.fillMaxSize().background(Color.Black)) {
-        HorizontalPager(state = pager, key = { media[it].key }, userScrollEnabled = !zoomed, modifier = Modifier.fillMaxSize()) { index ->
-            val item = media[index]
-            if (item.video && index == pager.currentPage) VideoPlayer(item, chrome) { chrome = it }
-            else ZoomableImage(item, onZoom = { if (index == pager.currentPage) zoomed = it }, onTap = { chrome = !chrome })
+
+    // Drag down to leave. Only on photographs: a PlayerView inside an AndroidView takes touches
+    // for itself, and intercepting them on the initial pass would break the playback controls.
+    val scope = rememberCoroutineScope()
+    val drag = remember { Animatable(0f) }
+    var viewerHeight by remember { mutableIntStateOf(0) }
+    val dismissDistance = with(LocalDensity.current) { DISMISS_DISTANCE.toPx() }
+    val dragging = if (viewerHeight > 0) (abs(drag.value) / viewerHeight).coerceIn(0f, 1f) else 0f
+    val canDismiss = !zoomed && !current.video
+    LaunchedEffect(canDismiss) { if (!canDismiss && drag.value != 0f) drag.snapTo(0f) }
+
+    Box(
+        Modifier.fillMaxSize()
+            .onSizeChanged { viewerHeight = it.height }
+            // The page behind the media thins out as the media travels, so the drag reads as
+            // leaving rather than as the photograph sliding off on its own.
+            .background(Color.Black.copy(alpha = 1f - dragging * .8f))
+    ) {
+        Box(
+            Modifier.fillMaxSize()
+                .graphicsLayer {
+                    translationY = drag.value
+                    val shrink = 1f - dragging * .18f
+                    scaleX = shrink
+                    scaleY = shrink
+                }
+                .then(
+                    if (canDismiss) Modifier.pointerInput(current.key) {
+                        detectVerticalDragGestures(
+                            onDragEnd = {
+                                scope.launch {
+                                    if (drag.value > dismissDistance) onClose()
+                                    else drag.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow))
+                                }
+                            },
+                            onDragCancel = { scope.launch { drag.animateTo(0f, spring(stiffness = Spring.StiffnessMediumLow)) } }
+                        ) { change, delta ->
+                            change.consume()
+                            // Downward only; dragging up should not peel the viewer off the top.
+                            scope.launch { drag.snapTo((drag.value + delta).coerceAtLeast(0f)) }
+                        }
+                    } else Modifier
+                )
+        ) {
+            HorizontalPager(state = pager, key = { media[it].key }, userScrollEnabled = !zoomed, modifier = Modifier.fillMaxSize()) { index ->
+                val item = media[index]
+                if (item.video && index == pager.currentPage) VideoPlayer(item, chrome) { chrome = it }
+                else ZoomableImage(item, onZoom = { if (index == pager.currentPage) zoomed = it }, onTap = { chrome = !chrome })
+            }
         }
-        AnimatedVisibility(chrome,
+        AnimatedVisibility(chrome && dragging == 0f,
             enter = fadeIn(tween(200)) + slideInVertically(tween(240)) { -it / 3 },
             exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { -it / 3 },
             modifier = Modifier.align(Alignment.TopCenter)) {
@@ -111,14 +180,14 @@ fun MediaViewer(media: List<GalleryMedia>, initialKey: String, favorites: Set<St
                 IconButton(onClick = { details = true }) { Icon(Icons.Default.Info, "Сведения", tint = Color.White) }
             }
         }
-        AnimatedVisibility(chrome,
+        AnimatedVisibility(chrome && dragging == 0f,
             enter = fadeIn(tween(200)) + slideInVertically(tween(240)) { it / 3 },
             exit = fadeOut(tween(160)) + slideOutVertically(tween(200)) { it / 3 },
             modifier = Modifier.align(Alignment.BottomCenter)) {
             Row(Modifier.fillMaxWidth()
                 .background(Brush.verticalGradient(listOf(Color.Transparent, Color.Black.copy(alpha = .75f))))
                 .navigationBarsPadding().padding(12.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                IconButton(onClick = { onFavorite(current.key) }) { Icon(if (current.key in favorites) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Избранное", tint = MaterialTheme.colorScheme.primary) }
+                IconButton(onClick = { onFavorite(current) }) { Icon(if (isFavorite(current)) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Избранное", tint = MaterialTheme.colorScheme.primary) }
                 IconButton(onClick = {
                     try {
                         val intent = Intent(Intent.ACTION_SEND).apply {
@@ -176,14 +245,35 @@ internal fun ZoomableImage(media: GalleryMedia, onZoom: (Boolean) -> Unit, onTap
         offset = clamp(offset + pan, next)
         onZoom(next > 1f)
     }
+    val context = LocalContext.current
+    // Both layers carry the same transform, or the sharp one would drift away from the one
+    // underneath it during a pinch.
+    val transformed = Modifier.fillMaxSize().graphicsLayer {
+        scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y
+    }
     Box(Modifier.fillMaxSize().background(Color.Black)
         .onSizeChanged { bounds = it }
         .pointerInput(media.key) { detectTapGestures(
             onTap = { onTap() },
             onDoubleTap = { animateZoom(if (scale > 1f) 1f else DOUBLE_TAP_ZOOM) }) }
         .transformable(state = transform, canPan = { scale > 1f }), contentAlignment = Alignment.Center) {
+        // The base layer is sized to the screen, which is all Coil was ever asked for: zooming to
+        // five times used to magnify those same pixels, so the detail simply was not there.
         AsyncImage(model = media.uri, contentDescription = media.name, contentScale = ContentScale.Fit,
-            modifier = Modifier.fillMaxSize().graphicsLayer { scaleX = scale; scaleY = scale; translationX = offset.x; translationY = offset.y })
+            modifier = transformed)
+        if (scale > DETAIL_FROM_SCALE) {
+            // Mounted only while zoomed and dropped on the way back, so the larger bitmap is not
+            // held for every page of the pager. It fades in over the base layer, which keeps
+            // showing in the meantime, so there is no blank frame while it decodes.
+            val detail = remember(media.key) {
+                ImageRequest.Builder(context)
+                    .data(media.uri)
+                    .size(Size(MAX_DETAIL_PIXELS, MAX_DETAIL_PIXELS))
+                    .build()
+            }
+            AsyncImage(model = detail, contentDescription = null, contentScale = ContentScale.Fit,
+                modifier = transformed)
+        }
     }
 }
 
@@ -199,13 +289,35 @@ internal fun VideoPlayer(media: GalleryMedia, chrome: Boolean, onChrome: (Boolea
     val lifecycle = LocalLifecycleOwner.current.lifecycle
     val player = remember(media.key) {
         ExoPlayer.Builder(context).build().apply {
+            // Audio focus is off by default, so a video used to play over whatever the user was
+            // already listening to. USAGE_MEDIA is required: automatic focus only covers usages
+            // that ask for permanent focus, and setAudioAttributes throws on the others.
+            setAudioAttributes(
+                AudioAttributes.Builder()
+                    .setUsage(C.USAGE_MEDIA)
+                    .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                /* handleAudioFocus = */ true
+            )
             setMediaItem(MediaItem.fromUri(media.uri)); prepare(); playWhenReady = true
         }
     }
+    // PlayerView does not keep the screen awake by itself, so a long video used to be cut off by
+    // the display timeout. Tied to actual playback rather than to the screen being open, so a
+    // paused video lets the phone sleep as usual.
+    var playing by remember(media.key) { mutableStateOf(false) }
     DisposableEffect(player, lifecycle) {
         val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_PAUSE) player.pause() }
+        val listener = object : Player.Listener {
+            override fun onIsPlayingChanged(isPlaying: Boolean) { playing = isPlaying }
+        }
         lifecycle.addObserver(observer)
-        onDispose { lifecycle.removeObserver(observer); player.release() }
+        player.addListener(listener)
+        onDispose {
+            lifecycle.removeObserver(observer)
+            player.removeListener(listener)
+            player.release()
+        }
     }
     val latestChrome by rememberUpdatedState(onChrome)
     AndroidView(
@@ -224,6 +336,7 @@ internal fun VideoPlayer(media: GalleryMedia, chrome: Boolean, onChrome: (Boolea
         },
         update = { playerView ->
             playerView.player = player
+            playerView.keepScreenOn = playing
             // Keep Media3 controls and application chrome in the same state after an
             // external toggle (back gesture, page change).
             if (chrome) playerView.showController() else playerView.hideController()
